@@ -23,7 +23,7 @@ pub struct Resolved<T> {
 impl<T> Default for Resolved<T> {
     fn default() -> Self {
         Self {
-            index: !0,
+            index: usize::MAX,
             _phantom: core::marker::PhantomData,
         }
     }

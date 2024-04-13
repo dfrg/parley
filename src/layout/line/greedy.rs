@@ -48,21 +48,34 @@ impl<'a, B: Brush> BreakLines<'a, B> {
     /// Computes the next line in the paragraph. Returns the advance and size
     /// (width and height for horizontal layouts) of the line.
     pub fn break_next(&mut self, max_advance: f32, alignment: Alignment) -> Option<(f32, f32)> {
+        // If all input text has been processed then exit early, returning None
         if self.done {
             return None;
         }
+
+        // Keep track of previous state
         self.prev_state = Some(self.state.clone());
+
+        // Iterate over remaining text runs
         let run_count = self.layout.runs.len();
         while self.state.i < run_count {
+            // Create Run struct
             let run_data = &self.layout.runs[self.state.i];
             let run = Run::new(self.layout, run_data, None);
+
+            // Iterate over clusters within a run
             let cluster_start = run_data.cluster_range.start;
             let cluster_end = run_data.cluster_range.end;
             while self.state.j < cluster_end {
+                // Get Cluster
                 let cluster = run.get(self.state.j - cluster_start).unwrap();
+
+                // Pre-compute some details about the cluster
                 let is_ligature_continuation = cluster.is_ligature_continuation();
                 let is_space = cluster.info().whitespace().is_space_or_nbsp();
                 let boundary = cluster.info().boundary();
+
+                // Handle clusters than are either Mandatory or Line boundaries
                 match boundary {
                     Boundary::Mandatory => {
                         if !self.state.line.skip_mandatory_break {
@@ -100,6 +113,8 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                 }
                 self.state.line.skip_mandatory_break = false;
                 let mut advance = cluster.advance();
+
+                // Handle ligatures by advancing the j index to include all clusters in the ligature
                 if cluster.is_ligature_start() {
                     while let Some(cluster) = run.get(self.state.j + 1) {
                         if !cluster.is_ligature_continuation() {
@@ -110,8 +125,11 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                         }
                     }
                 }
+
+                // Handle overflow beyond the max_advance limit
                 let next_x = self.state.line.x + advance;
                 if next_x > max_advance {
+                    // Handle overflowing spaces
                     if is_space {
                         // Hang overflowing whitespace
                         self.state.line.runs.end = self.state.i + 1;
@@ -134,7 +152,9 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                             self.state.j += 1;
                             return Some((line.metrics.advance, line.size()));
                         }
-                    } else if let Some(prev) = self.state.prev_boundary.take() {
+                    }
+                    // Handle the case where there is a previous line-breaking opportunity within the current line
+                    else if let Some(prev) = self.state.prev_boundary.take() {
                         if prev.state.x == 0. {
                             // This will cycle if we try to rewrap. Accept the overflowing fragment.
                             self.state.line.runs.end = self.state.i + 1;
@@ -500,31 +520,43 @@ fn commit_line<B: Brush>(
     break_reason: BreakReason,
     is_last: bool,
 ) -> bool {
+    // Is the entire layout empty (contains no text) so far?
     let is_empty = layout.text_len == 0;
+
     state.clusters.end = state.clusters.end.min(layout.clusters.len());
     if state.runs.end == 0 && is_last {
         state.runs.end = 1;
     }
     let last_run = state.runs.len() - 1;
     let runs_start = lines.runs.len();
+
+    // Iterate over the text runs that are buffered in the line breakers state
+    // as candidates to be included in the next line
     for (i, run_data) in layout.runs[state.runs.clone()].iter().enumerate() {
-        let run_index = state.runs.start + i;
-        let mut cluster_range = run_data.cluster_range.clone();
-        if i == 0 {
-            cluster_range.start = state.clusters.start;
-        }
-        if i == last_run {
-            cluster_range.end = state.clusters.end;
-        }
+        // Determine cluster range of the run
+        let cluster_range = {
+            let mut cluster_range = run_data.cluster_range.clone();
+            if i == 0 {
+                cluster_range.start = state.clusters.start;
+            }
+            if i == last_run {
+                cluster_range.end = state.clusters.end;
+            }
+            cluster_range
+        };
+
+        // Skip run if the cluster range has start > end
         if cluster_range.start > cluster_range.end
             || (!is_empty && cluster_range.start == cluster_range.end)
         {
             continue;
         }
-        let run = Run::new(layout, run_data, None);
+
+        // Compute the range of bytes in the underling text buffer for the text run
         let text_range = if run_data.cluster_range.is_empty() {
             0..0
         } else {
+            let run = Run::new(layout, run_data, None);
             let first_cluster = run
                 .get(cluster_range.start - run_data.cluster_range.start)
                 .unwrap();
@@ -533,7 +565,10 @@ fn commit_line<B: Brush>(
                 .unwrap();
             first_cluster.text_range().start..last_cluster.text_range().end
         };
-        let line_run = LineRunData {
+
+        // Push run to the line
+        let run_index = state.runs.start + i;
+        lines.runs.push(LineRunData {
             run_index,
             bidi_level: run_data.bidi_level,
             is_whitespace: false,
@@ -541,31 +576,38 @@ fn commit_line<B: Brush>(
             cluster_range,
             text_range,
             advance: 0.,
-        };
-        lines.runs.push(line_run);
+        });
     }
+
+    // If no new runs have been pushed to the line then exit without committing the line
     let runs_end = lines.runs.len();
     if runs_start == runs_end {
         return false;
     }
-    let mut num_spaces = state.num_spaces;
-    if break_reason == BreakReason::Regular {
-        num_spaces = num_spaces.saturating_sub(1);
-    }
-    let mut line = LineData {
+
+    // Commit the line
+    lines.lines.push(LineData {
         run_range: runs_start..runs_end,
         max_advance,
         alignment,
         break_reason,
-        num_spaces,
+        num_spaces: match break_reason {
+            BreakReason::Regular => state.num_spaces.saturating_sub(1),
+            _ => state.num_spaces,
+        },
+        metrics: LineMetrics {
+            advance: state.x,
+            ..Default::default()
+        },
         ..Default::default()
-    };
-    line.metrics.advance = state.x;
-    lines.lines.push(line);
+    });
+
+    // Update state in prepartion for processing the next line
     state.clusters.start = state.clusters.end;
     state.clusters.end += 1;
     state.runs.start = state.runs.end - 1;
     state.num_spaces = 0;
+
     true
 }
 
