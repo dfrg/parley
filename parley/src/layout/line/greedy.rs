@@ -59,6 +59,28 @@ struct BreakerState {
     prev_boundary: Option<PrevBoundaryState>,
 }
 
+impl BreakerState {
+    /// Add the cluster(s) currently being evaluated to the current line
+    fn append_cluster_to_line(&mut self, next_x: f32) {
+        self.line.runs.end = self.run_idx + 1;
+        self.line.clusters.end = self.cluster_idx + 1;
+        self.line.x = next_x;
+        // Would like to add:
+        // self.cluster_idx += 1;
+    }
+
+    /// Store the current iteration state so that we can revert to it if we later want to take
+    /// the line breaking opportunity at this point.
+    fn mark_line_break_opportunity(&mut self) {
+        self.prev_boundary = Some(PrevBoundaryState {
+            item_idx: self.item_idx,
+            run_idx: self.run_idx,
+            cluster_idx: self.cluster_idx,
+            state: self.line.clone(),
+        });
+    }
+}
+
 /// Line breaking support for a paragraph.
 pub struct BreakLines<'a, B: Brush> {
     layout: &'a mut LayoutData<B>,
@@ -91,6 +113,8 @@ impl<'a, B: Brush> BreakLines<'a, B> {
         self.state.items = self.lines.line_items.len();
         self.state.lines = self.lines.lines.len();
         self.state.line.x = 0.;
+        // Would like to add:
+        // self.state.prev_boundary = None;
         self.last_line_data()
     }
 
@@ -163,12 +187,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                     Boundary::Line => {
                         // We do not currently handle breaking within a ligature, so we ignore boundaries in such a position.
                         if !is_ligature_continuation {
-                            self.state.prev_boundary = Some(PrevBoundaryState {
-                                item_idx: self.state.item_idx,
-                                run_idx: self.state.run_idx,
-                                cluster_idx: self.state.cluster_idx,
-                                state: self.state.line.clone(),
-                            });
+                            self.state.mark_line_break_opportunity();
                         }
                     }
                     // Not a line boundary
@@ -208,15 +227,13 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                 }
                 // Else we line break:
                 else {
-                    // Handle case where cluster is space character
+                    // Handle case where cluster is space character. Hang overflowing whitespace.
                     if is_space {
-                        // Hang overflowing whitespace
-                        self.state.line.runs.end = self.state.run_idx + 1;
-                        self.state.line.clusters.end = self.state.cluster_idx + 1;
-                        self.state.line.x = next_x;
+                        self.state.append_cluster_to_line(next_x);
                         if try_commit!(BreakReason::Regular) {
-                            self.state.prev_boundary = None;
+                            // TODO: can this be hoisted out of the conditional?
                             self.state.cluster_idx += 1;
+                            self.state.prev_boundary = None;
                             return self.start_new_line();
                         }
                     }
@@ -225,29 +242,31 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                         // If the previous line-breaking opportunity was at x=0 (i.e. the very start of a line) then we shouldn't
                         // insert another line break. We should accept the overflowing fragment on the current line.
                         if prev.state.x == 0. {
-                            self.state.line.runs.end = self.state.run_idx + 1;
-                            self.state.line.clusters.end = self.state.cluster_idx + 1;
-                            self.state.line.x = next_x;
+                            self.state.append_cluster_to_line(next_x);
                             self.state.cluster_idx += 1;
 
                             if try_commit!(BreakReason::Emergency) {
-                                self.state.prev_boundary = None;
                                 self.state.cluster_idx += 1;
+                                self.state.prev_boundary = None;
                                 return self.start_new_line();
                             }
                         }
                         // Otherwise we "take" the line-breaking opportunity by starting a new line and resetting our
                         // item/run/cluster iteration state back to how it was when the line-breaking opportunity was encountered
                         else {
+
+                            // Q: Why do we revert the line state here, but only revert the indexes if the commit suceeds?
                             self.state.line = prev.state;
                             if try_commit!(BreakReason::Regular) {
-                                // This wasn't previously here, but was implied by the self.state.prev_boundary.take() above
-                                // Adding for consistency between branches.
-                                self.state.prev_boundary = None;
                                 // Revert boundary state to prev state
                                 self.state.item_idx = prev.item_idx;
                                 self.state.run_idx = prev.run_idx;
                                 self.state.cluster_idx = prev.cluster_idx;
+
+                                // This line wasn't previously here, but was implied by the self.state.prev_boundary.take() above
+                                // Adding for consistency between branches.
+                                self.state.prev_boundary = None;
+
                                 return self.start_new_line();
                             }
                         }
@@ -257,17 +276,12 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                         // If we're at the start of the line, this particular cluster will never fit,
                         // so consume it and accept the overflow.
                         if self.state.line.x == 0. {
-                            self.state.line.runs.end = self.state.run_idx + 1;
-                            self.state.line.clusters.end = self.state.cluster_idx + 1;
-                            self.state.line.x = next_x;
+                            self.state.append_cluster_to_line(next_x);
                             self.state.cluster_idx += 1;
                         }
                         if try_commit!(BreakReason::Emergency) {
-                            self.state.items = self.lines.line_items.len();
-                            self.state.lines = self.lines.lines.len();
-                            self.state.line.x = 0.;
-                            self.state.prev_boundary = None;
                             self.state.cluster_idx += 1;
+                            self.state.prev_boundary = None;
                             return self.start_new_line();
                         }
                     }
