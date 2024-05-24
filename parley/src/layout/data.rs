@@ -158,6 +158,20 @@ impl LineRunData {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum LayoutItemKind {
+    TextRun,
+    InlineBox,
+}
+
+#[derive(Debug, Clone)]
+pub struct LayoutItem {
+    /// Whether the item is a run or an inline box
+    pub kind: LayoutItemKind,
+    /// The index of the run or inline box in the runs or inline_boxes vec
+    pub index: usize,
+}
+
 #[derive(Clone)]
 pub struct LayoutData<B: Brush> {
     pub scale: f32,
@@ -172,6 +186,7 @@ pub struct LayoutData<B: Brush> {
     pub styles: Vec<Style<B>>,
     pub inline_boxes: Vec<InlineBox>,
     pub runs: Vec<RunData>,
+    pub items: Vec<LayoutItem>,
     pub clusters: Vec<ClusterData>,
     pub glyphs: Vec<Glyph>,
     pub lines: Vec<LineData>,
@@ -193,6 +208,7 @@ impl<B: Brush> Default for LayoutData<B> {
             styles: Vec::new(),
             inline_boxes: Vec::new(),
             runs: Vec::new(),
+            items: Vec::new(),
             clusters: Vec::new(),
             glyphs: Vec::new(),
             lines: Vec::new(),
@@ -215,10 +231,19 @@ impl<B: Brush> LayoutData<B> {
         self.styles.clear();
         self.inline_boxes.clear();
         self.runs.clear();
+        self.items.clear();
         self.clusters.clear();
         self.glyphs.clear();
         self.lines.clear();
         self.line_runs.clear();
+    }
+
+    /// Push an inline box to the list of items
+    pub fn push_inline_box(&mut self, index: usize) {
+        self.items.push(LayoutItem {
+            kind: LayoutItemKind::InlineBox,
+            index,
+        });
     }
 
     #[allow(unused_assignments)]
@@ -280,6 +305,10 @@ impl<B: Brush> LayoutData<B> {
             () => {
                 if !run.cluster_range.is_empty() {
                     self.runs.push(run.clone());
+                    self.items.push(LayoutItem {
+                        kind: LayoutItemKind::TextRun,
+                        index: self.runs.len() - 1,
+                    });
                     run.text_range = text_offset..text_offset;
                     run.cluster_range.start = run.cluster_range.end;
                     run.glyph_start = self.glyphs.len();

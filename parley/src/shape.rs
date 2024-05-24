@@ -19,6 +19,9 @@ use swash::text::cluster::{CharCluster, CharInfo, Token};
 use swash::text::{Language, Script};
 use swash::{FontRef, Synthesis};
 
+#[cfg(feature = "std")]
+use crate::inline_box::InlineBox;
+
 struct Item {
     style_index: u16,
     size: f32,
@@ -37,15 +40,19 @@ pub fn shape_text<'a, B: Brush>(
     rcx: &'a ResolveContext,
     mut fq: Query<'a>,
     styles: &'a [RangedStyle<B>],
+    inline_boxes: &[InlineBox],
     infos: &[(CharInfo, u16)],
     levels: &[u8],
     scx: &mut ShapeContext,
     text: &str,
     layout: &mut Layout<B>,
 ) {
+    // Do nothing if there is no text or styles (there should always be a default style)
     if text.is_empty() || styles.is_empty() {
         return;
     }
+
+    // Setup mutable state for iteration
     let mut style = &styles[0].style;
     let mut item = Item {
         style_index: 0,
@@ -64,6 +71,11 @@ pub fn shape_text<'a, B: Brush>(
     };
     let mut char_range = 0..0;
     let mut text_range = 0..0;
+
+    let mut inline_box_iter = inline_boxes.iter().enumerate();
+    let mut current_box = inline_box_iter.next();
+
+    // Define macro to shape
     macro_rules! shape_item {
         () => {
             let item_text = &text[text_range.clone()];
@@ -117,6 +129,8 @@ pub fn shape_text<'a, B: Brush>(
             );
         };
     }
+
+    // Iterate over characters in the text
     for ((char_index, ch), (info, style_index)) in text.chars().enumerate().zip(infos) {
         let mut break_run = false;
         let mut script = info.script();
@@ -137,7 +151,29 @@ pub fn shape_text<'a, B: Brush>(
                 break_run = true;
             }
         }
-        if break_run || level != item.level || script != item.script {
+
+        if level != item.level || script != item.script {
+            break_run = true;
+        }
+
+        // Check if there is an inline box at this index
+        // Note:
+        //   - We loop because there may be multiple boxes at this index
+        //   - We do this *before* processing the text run because a box at index 0 should
+        //     be placed before item 0
+        while let Some((box_idx, inline_box)) = current_box {
+            if inline_box.index == char_index {
+                break_run = true;
+
+                // Push the box to the list of items
+                layout.data.push_inline_box(box_idx);
+
+                // Update the current box to the next box
+                current_box = inline_box_iter.next();
+            }
+        }
+
+        if break_run && !text_range.is_empty() {
             shape_item!();
             item.size = style.font_size;
             item.level = level;
@@ -151,8 +187,15 @@ pub fn shape_text<'a, B: Brush>(
         text_range.end += ch.len_utf8();
         char_range.end += 1;
     }
+
     if !text_range.is_empty() {
         shape_item!();
+    }
+
+    // Process any remaining inline boxes whose index is greater than the length of the text
+    while let Some((box_idx, _inline_box)) = inline_box_iter.next() {
+        // Push the box to the list of items
+        layout.data.push_inline_box(box_idx);
     }
 }
 

@@ -184,6 +184,7 @@ impl<'a, B: Brush, T: TextSource> RangedBuilder<'a, B, T> {
                 &lcx.rcx,
                 query,
                 &lcx.styles,
+                &lcx.inline_boxes,
                 &lcx.info,
                 lcx.bidi.levels(),
                 &mut lcx.scx,
@@ -193,6 +194,9 @@ impl<'a, B: Brush, T: TextSource> RangedBuilder<'a, B, T> {
         }
 
         layout.data.finish();
+
+        // Extra processing if the text is empty
+        // TODO: update this logic to work with inline boxes
         if is_empty {
             layout.data.text_len = 0;
             let run = &mut layout.data.runs[0];
