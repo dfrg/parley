@@ -24,6 +24,32 @@ impl LineLayout {
     }
 }
 
+#[derive(Clone, Default)]
+struct LineState {
+    x: f32,
+    runs: Range<usize>,
+    clusters: Range<usize>,
+    skip_mandatory_break: bool,
+    num_spaces: usize,
+}
+
+#[derive(Clone, Default)]
+struct PrevBoundaryState {
+    i: usize,
+    j: usize,
+    state: LineState,
+}
+
+#[derive(Clone, Default)]
+struct BreakerState {
+    runs: usize,
+    lines: usize,
+    i: usize,
+    j: usize,
+    line: LineState,
+    prev_boundary: Option<PrevBoundaryState>,
+}
+
 /// Line breaking support for a paragraph.
 pub struct BreakLines<'a, B: Brush> {
     layout: &'a mut LayoutData<B>,
@@ -469,32 +495,6 @@ fn unjustify<B: Brush>(layout: &mut LayoutData<B>) {
             }
         }
     }
-}
-
-#[derive(Clone, Default)]
-struct LineState {
-    x: f32,
-    runs: Range<usize>,
-    clusters: Range<usize>,
-    skip_mandatory_break: bool,
-    num_spaces: usize,
-}
-
-#[derive(Clone, Default)]
-struct PrevBoundaryState {
-    i: usize,
-    j: usize,
-    state: LineState,
-}
-
-#[derive(Clone, Default)]
-struct BreakerState {
-    runs: usize,
-    lines: usize,
-    i: usize,
-    j: usize,
-    line: LineState,
-    prev_boundary: Option<PrevBoundaryState>,
 }
 
 fn commit_line<B: Brush>(
