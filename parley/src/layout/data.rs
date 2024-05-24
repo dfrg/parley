@@ -170,6 +170,8 @@ pub struct LayoutItem {
     pub kind: LayoutItemKind,
     /// The index of the run or inline box in the runs or inline_boxes vec
     pub index: usize,
+    /// Bidi level for the item (used for reordering)
+    pub bidi_level: u8,
 }
 
 #[derive(Clone)]
@@ -240,9 +242,15 @@ impl<B: Brush> LayoutData<B> {
 
     /// Push an inline box to the list of items
     pub fn push_inline_box(&mut self, index: usize) {
+
+        // Give the box the same bidi level as the preceding text run
+        // (or else default to 0 if there is not yet a text run)
+        let bidi_level = self.runs.last().map(|r| r.bidi_level).unwrap_or(0);
+
         self.items.push(LayoutItem {
             kind: LayoutItemKind::InlineBox,
             index,
+            bidi_level,
         });
     }
 
@@ -308,6 +316,7 @@ impl<B: Brush> LayoutData<B> {
                     self.items.push(LayoutItem {
                         kind: LayoutItemKind::TextRun,
                         index: self.runs.len() - 1,
+                        bidi_level: run.bidi_level,
                     });
                     run.text_range = text_offset..text_offset;
                     run.cluster_range.start = run.cluster_range.end;
