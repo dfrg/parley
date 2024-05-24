@@ -35,8 +35,8 @@ struct LineState {
 
 #[derive(Clone, Default)]
 struct PrevBoundaryState {
-    i: usize,
-    j: usize,
+    run_idx: usize,
+    cluster_idx: usize,
     state: LineState,
 }
 
@@ -49,7 +49,7 @@ struct BreakerState {
 
     /// Iteration state: the current run (within the layout)
     run_idx: usize,
-    /// Iteration state: the current cluster (within the current run)
+    /// Iteration state: the current cluster (within the layout)
     cluster_idx: usize,
 
     line: LineState,
@@ -155,8 +155,8 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                     Boundary::Line => {
                         if !is_ligature_continuation {
                             self.state.prev_boundary = Some(PrevBoundaryState {
-                                i: self.state.run_idx,
-                                j: self.state.cluster_idx,
+                                run_idx: self.state.run_idx,
+                                cluster_idx: self.state.cluster_idx,
                                 state: self.state.line.clone(),
                             });
                         }
@@ -227,8 +227,8 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                         } else {
                             self.state.line = prev.state;
                             if try_commit!(max_advance, alignment, BreakReason::Regular) {
-                                self.state.run_idx = prev.i;
-                                self.state.cluster_idx = prev.j;
+                                self.state.run_idx = prev.run_idx;
+                                self.state.cluster_idx = prev.cluster_idx;
                                 return self.start_new_line();
                             }
                         }
@@ -353,7 +353,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                 have_metrics = true;
             }
 
-            // Reorder items (if required). Reordering is required if the line contains
+            // Reorder the items within the line (if required). Reordering is required if the line contains
             // a mix of bidi levels (a mix of LTR and RTL text)
             if needs_reorder && run_count > 1 {
                 reorder_line_items(&mut self.lines.line_items[line.run_range.clone()]);
