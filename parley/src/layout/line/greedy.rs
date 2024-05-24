@@ -42,10 +42,16 @@ struct PrevBoundaryState {
 
 #[derive(Clone, Default)]
 struct BreakerState {
-    runs: usize,
+    /// The number of items that have been processed (used to revert state)
+    items: usize,
+    /// The number of items that have been processed (used to revert state)
     lines: usize,
-    i: usize,
-    j: usize,
+
+    /// Iteration state: the current run (within the layout)
+    run_idx: usize,
+    /// Iteration state: the current cluster (within the current run)
+    cluster_idx: usize,
+
     line: LineState,
     prev_boundary: Option<PrevBoundaryState>,
 }
@@ -77,6 +83,19 @@ impl<'a, B: Brush> BreakLines<'a, B> {
         }
     }
 
+    /// Reset state when a line has been comitted
+    fn start_new_line(&mut self) -> Option<(f32, f32)> {
+        self.state.items = self.lines.line_items.len();
+        self.state.lines = self.lines.lines.len();
+        self.state.line.x = 0.;
+        self.last_line_data()
+    }
+
+    fn last_line_data(&self) -> Option<(f32, f32)> {
+        let line = self.lines.lines.last().unwrap();
+        Some((line.metrics.advance, line.size()))
+    }
+
     /// Computes the next line in the paragraph. Returns the advance and size
     /// (width and height for horizontal layouts) of the line.
     pub fn break_next(&mut self, max_advance: f32, alignment: Alignment) -> Option<(f32, f32)> {
@@ -86,190 +105,167 @@ impl<'a, B: Brush> BreakLines<'a, B> {
         }
         self.prev_state = Some(self.state.clone());
 
-        // Iterate over all runs in the Layout
+        // This macro simply calls the `commit_line` with the provided arguments and some parts of self.
+        // It exists solely to cut down on the boilerplate for accessing the self variables while
+        // keeping the borrow checker happy
+        macro_rules! try_commit {
+            ($max_advance:expr, $alignment:expr, $break_reason:expr) => {
+                commit_line(
+                    self.layout,
+                    &mut self.lines,
+                    &mut self.state.line,
+                    $max_advance,
+                    $alignment,
+                    $break_reason,
+                )
+            };
+        }
+
+        // Iterate over remaining runs in the Layout
         let run_count = self.layout.runs.len();
-        while self.state.i < run_count {
-            let run_data = &self.layout.runs[self.state.i];
+        while self.state.run_idx < run_count {
+            let run_data = &self.layout.runs[self.state.run_idx];
             let run = Run::new(self.layout, run_data, None);
             let cluster_start = run_data.cluster_range.start;
             let cluster_end = run_data.cluster_range.end;
-            while self.state.j < cluster_end {
-                let cluster = run.get(self.state.j - cluster_start).unwrap();
+
+            // Iterate over remaining clusters in the Run
+            while self.state.cluster_idx < cluster_end {
+                let cluster = run.get(self.state.cluster_idx - cluster_start).unwrap();
                 let is_ligature_continuation = cluster.is_ligature_continuation();
                 let is_space = cluster.info().whitespace().is_space_or_nbsp();
+
+                // Handle boundary clusters
                 let boundary = cluster.info().boundary();
                 match boundary {
                     Boundary::Mandatory => {
                         if !self.state.line.skip_mandatory_break {
                             self.state.prev_boundary = None;
-                            self.state.line.clusters.end = self.state.j;
-                            self.state.line.runs.end = self.state.i + 1;
+                            self.state.line.runs.end = self.state.run_idx + 1;
+                            self.state.line.clusters.end = self.state.cluster_idx;
+
+                            // We skip a mandatory break immediately after another mandatory break
                             self.state.line.skip_mandatory_break = true;
-                            if commit_line(
-                                self.layout,
-                                &mut self.lines,
-                                &mut self.state.line,
-                                max_advance,
-                                alignment,
-                                BreakReason::Explicit,
-                                false,
-                            ) {
-                                self.state.runs = self.lines.line_items.len();
-                                self.state.lines = self.lines.lines.len();
-                                self.state.line.x = 0.;
-                                let line = self.lines.lines.last().unwrap();
-                                return Some((line.metrics.advance, line.size()));
+
+                            if try_commit!(max_advance, alignment, BreakReason::Explicit) {
+                                return self.start_new_line();
                             }
                         }
                     }
                     Boundary::Line => {
                         if !is_ligature_continuation {
                             self.state.prev_boundary = Some(PrevBoundaryState {
-                                i: self.state.i,
-                                j: self.state.j,
+                                i: self.state.run_idx,
+                                j: self.state.cluster_idx,
                                 state: self.state.line.clone(),
                             });
                         }
                     }
                     _ => {}
                 }
+
+                // We only skip a mandatory break immediately after another mandatory break so if we
+                // have got this far then we should disable mandatory break skipping
                 self.state.line.skip_mandatory_break = false;
+
+                // If current cluster is the start of a ligature, then advance state to include
+                // the remaining clusters that make up the ligature
                 let mut advance = cluster.advance();
                 if cluster.is_ligature_start() {
-                    while let Some(cluster) = run.get(self.state.j + 1) {
+                    while let Some(cluster) = run.get(self.state.cluster_idx + 1) {
                         if !cluster.is_ligature_continuation() {
                             break;
                         } else {
                             advance += cluster.advance();
-                            self.state.j += 1;
+                            self.state.cluster_idx += 1;
                         }
                     }
                 }
+
+                // Compute the x position of the content being currently processed
                 let next_x = self.state.line.x + advance;
-                if next_x > max_advance {
-                    if is_space {
-                        // Hang overflowing whitespace
-                        self.state.line.runs.end = self.state.i + 1;
-                        self.state.line.clusters.end = self.state.j + 1;
-                        self.state.line.x = next_x;
-                        if commit_line(
-                            self.layout,
-                            &mut self.lines,
-                            &mut self.state.line,
-                            max_advance,
-                            alignment,
-                            BreakReason::Regular,
-                            false,
-                        ) {
-                            self.state.runs = self.lines.line_items.len();
-                            self.state.lines = self.lines.lines.len();
-                            self.state.line.x = 0.;
-                            let line = self.lines.lines.last().unwrap();
-                            self.state.prev_boundary = None;
-                            self.state.j += 1;
-                            return Some((line.metrics.advance, line.size()));
-                        }
-                    } else if let Some(prev) = self.state.prev_boundary.take() {
-                        if prev.state.x == 0. {
-                            // This will cycle if we try to rewrap. Accept the overflowing fragment.
-                            self.state.line.runs.end = self.state.i + 1;
-                            self.state.line.clusters.end = self.state.j + 1;
-                            self.state.line.x = next_x;
-                            self.state.j += 1;
-                            if commit_line(
-                                self.layout,
-                                &mut self.lines,
-                                &mut self.state.line,
-                                max_advance,
-                                alignment,
-                                BreakReason::Emergency,
-                                false,
-                            ) {
-                                self.state.runs = self.lines.line_items.len();
-                                self.state.lines = self.lines.lines.len();
-                                self.state.line.x = 0.;
-                                let line = self.lines.lines.last().unwrap();
-                                self.state.prev_boundary = None;
-                                self.state.j += 1;
-                                return Some((line.metrics.advance, line.size()));
-                            }
-                        } else {
-                            self.state.line = prev.state;
-                            if commit_line(
-                                self.layout,
-                                &mut self.lines,
-                                &mut self.state.line,
-                                max_advance,
-                                alignment,
-                                BreakReason::Regular,
-                                false,
-                            ) {
-                                self.state.runs = self.lines.line_items.len();
-                                self.state.lines = self.lines.lines.len();
-                                self.state.line.x = 0.;
-                                let line = self.lines.lines.last().unwrap();
-                                self.state.i = prev.i;
-                                self.state.j = prev.j;
-                                return Some((line.metrics.advance, line.size()));
-                            }
-                        }
-                    } else {
-                        if self.state.line.x == 0. {
-                            // If we're at the start of the line, this particular
-                            // cluster will never fit, so consume it and accept
-                            // the overflow.
-                            self.state.line.runs.end = self.state.i + 1;
-                            self.state.line.clusters.end = self.state.j + 1;
-                            self.state.line.x = next_x;
-                            self.state.j += 1;
-                        }
-                        if commit_line(
-                            self.layout,
-                            &mut self.lines,
-                            &mut self.state.line,
-                            max_advance,
-                            alignment,
-                            BreakReason::Emergency,
-                            false,
-                        ) {
-                            self.state.runs = self.lines.line_items.len();
-                            self.state.lines = self.lines.lines.len();
-                            self.state.line.x = 0.;
-                            let line = self.lines.lines.last().unwrap();
-                            self.state.prev_boundary = None;
-                            self.state.j += 1;
-                            return Some((line.metrics.advance, line.size()));
-                        }
-                    }
-                } else {
-                    // Commit the cluster to the line.
-                    self.state.line.runs.end = self.state.i + 1;
-                    self.state.line.clusters.end = self.state.j + 1;
+
+                // If that x position does NOT exceed max_advance then we simply add the cluster(s) to the current line
+                if next_x <= max_advance {
+                    self.state.line.runs.end = self.state.run_idx + 1;
+                    self.state.line.clusters.end = self.state.cluster_idx + 1;
                     self.state.line.x = next_x;
-                    self.state.j += 1;
+                    self.state.cluster_idx += 1;
                     if is_space {
                         self.state.line.num_spaces += 1;
                     }
                 }
+                // Else we (attempt to?) line break:
+                else {
+                    // Handle case where cluster is space character
+                    if is_space {
+                        // Hang overflowing whitespace
+                        self.state.line.runs.end = self.state.run_idx + 1;
+                        self.state.line.clusters.end = self.state.cluster_idx + 1;
+                        self.state.line.x = next_x;
+                        if try_commit!(max_advance, alignment, BreakReason::Regular) {
+                            self.state.prev_boundary = None;
+                            self.state.cluster_idx += 1;
+                            return self.start_new_line();
+                        }
+                    }
+                    // Handle case where there is a stored "previous boundary"
+                    // (we have previously encountered an explcicit line break)
+                    else if let Some(prev) = self.state.prev_boundary.take() {
+                        if prev.state.x == 0. {
+                            // This will cycle if we try to rewrap. Accept the overflowing fragment.
+                            self.state.line.runs.end = self.state.run_idx + 1;
+                            self.state.line.clusters.end = self.state.cluster_idx + 1;
+                            self.state.line.x = next_x;
+                            self.state.cluster_idx += 1;
+
+                            if try_commit!(max_advance, alignment, BreakReason::Emergency) {
+                                self.state.prev_boundary = None;
+                                self.state.cluster_idx += 1;
+                                return self.start_new_line();
+                            }
+                        } else {
+                            self.state.line = prev.state;
+                            if try_commit!(max_advance, alignment, BreakReason::Regular) {
+                                self.state.run_idx = prev.i;
+                                self.state.cluster_idx = prev.j;
+                                return self.start_new_line();
+                            }
+                        }
+                    }
+                    // Otherwise perform an emergency line break
+                    else {
+                        if self.state.line.x == 0. {
+                            // If we're at the start of the line, this particular
+                            // cluster will never fit, so consume it and accept
+                            // the overflow.
+                            self.state.line.runs.end = self.state.run_idx + 1;
+                            self.state.line.clusters.end = self.state.cluster_idx + 1;
+                            self.state.line.x = next_x;
+                            self.state.cluster_idx += 1;
+                        }
+                        if try_commit!(max_advance, alignment, BreakReason::Emergency) {
+                            self.state.items = self.lines.line_items.len();
+                            self.state.lines = self.lines.lines.len();
+                            self.state.line.x = 0.;
+                            self.state.prev_boundary = None;
+                            self.state.cluster_idx += 1;
+                            return self.start_new_line();
+                        }
+                    }
+                }
             }
-            self.state.i += 1;
+            self.state.run_idx += 1;
         }
-        if commit_line(
-            self.layout,
-            &mut self.lines,
-            &mut self.state.line,
-            max_advance,
-            alignment,
-            BreakReason::None,
-            true,
-        ) {
-            self.state.runs = self.lines.line_items.len();
-            self.state.lines = self.lines.lines.len();
-            self.state.line.x = 0.;
-            let line = self.lines.lines.last().unwrap();
+
+        if self.state.line.runs.end == 0 {
+            self.state.line.runs.end = 1;
+        }
+        if try_commit!(max_advance, alignment, BreakReason::None) {
             self.done = true;
-            return Some((line.metrics.advance, line.size()));
+            return self.start_new_line();
         }
+
         None
     }
 
@@ -278,7 +274,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
         if let Some(state) = self.prev_state.take() {
             self.state = state;
             self.lines.lines.truncate(self.state.lines);
-            self.lines.line_items.truncate(self.state.runs);
+            self.lines.line_items.truncate(self.state.items);
             self.done = false;
             true
         } else {
@@ -521,6 +517,53 @@ fn unjustify<B: Brush>(layout: &mut LayoutData<B>) {
     }
 }
 
+// fn cluster_range_is_valid(
+//     mut cluster_range: Range<usize>,
+//     state_cluster_range: Range<usize>,
+//     is_first: bool,
+//     is_last: bool,
+//     is_empty: bool,
+// ) -> bool {
+//     // Compute cluster range
+//     if is_first {
+//         cluster_range.start = state_cluster_range.start;
+//     }
+//     if is_last {
+//         cluster_range.end = state_cluster_range.end;
+//     }
+
+//     // Return true if cluster is valid. Else false.
+//     cluster_range.start < cluster_range.end
+//         || (cluster_range.start == cluster_range.end && is_empty)
+// }
+
+// fn should_commit_line<B: Brush>(
+//     layout: &LayoutData<B>,
+//     state: &mut LineState,
+//     is_last: bool,
+// ) -> bool {
+//     // Compute end cluster
+//     state.clusters.end = state.clusters.end.min(layout.clusters.len());
+//     if state.runs.end == 0 && is_last {
+//         state.runs.end = 1;
+//     }
+
+//     let last_run = state.runs.len() - 1;
+//     let is_empty = layout.text_len == 0;
+
+//     // Iterate over runs. Checking if any have a valid cluster range.
+//     let runs = &layout.runs[state.runs.clone()];
+//     runs.iter().enumerate().any(|(i, run_data)| {
+//         cluster_range_is_valid(
+//             run_data.cluster_range.clone(),
+//             state.clusters.clone(),
+//             i == 0,
+//             i == last_run,
+//             is_empty,
+//         )
+//     })
+// }
+
 fn commit_line<B: Brush>(
     layout: &LayoutData<B>,
     lines: &mut LineLayout,
@@ -528,13 +571,11 @@ fn commit_line<B: Brush>(
     max_advance: f32,
     alignment: Alignment,
     break_reason: BreakReason,
-    is_last: bool,
 ) -> bool {
     let is_empty = layout.text_len == 0;
+
     state.clusters.end = state.clusters.end.min(layout.clusters.len());
-    if state.runs.end == 0 && is_last {
-        state.runs.end = 1;
-    }
+
     let last_run = state.runs.len() - 1;
     let runs_start = lines.line_items.len();
     for (i, run_data) in layout.runs[state.runs.clone()].iter().enumerate() {

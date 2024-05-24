@@ -50,13 +50,14 @@ impl<'a, B: Brush> Line<'a, B> {
     pub fn runs(&self) -> impl Iterator<Item = Run<'a, B>> + 'a + Clone {
         let copy = self.clone();
         let line_items = &copy.layout.line_items[self.data.run_range.clone()];
-        line_items.iter()
-        .filter(|item| item.kind == LayoutItemKind::TextRun)
-        .map(move |line_data| Run {
-            layout: copy.layout,
-            data: &copy.layout.runs[line_data.index],
-            line_data: Some(line_data),
-        })
+        line_items
+            .iter()
+            .filter(|item| item.kind == LayoutItemKind::TextRun)
+            .map(move |line_data| Run {
+                layout: copy.layout,
+                data: &copy.layout.runs[line_data.index],
+                line_data: Some(line_data),
+            })
     }
 
     /// Returns an iterator over the glyph runs for the line.

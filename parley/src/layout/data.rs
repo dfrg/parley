@@ -133,7 +133,6 @@ pub struct LineItemData {
 
     // Fields that only apply to text runs (Ignored for boxes)
     // TODO: factor this out?
-
     /// True if the run is composed entirely of whitespace.
     pub is_whitespace: bool,
     /// True if the run ends in whitespace.
@@ -169,7 +168,7 @@ impl LineItemData {
             LayoutItemKind::InlineBox => {
                 // TODO: account for vertical alignment (e.g. baseline alignment)
                 layout.inline_boxes[self.index].height
-            },
+            }
         }
     }
 }
