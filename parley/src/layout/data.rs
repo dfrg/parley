@@ -126,7 +126,7 @@ impl LineData {
 pub struct LineItemData {
     /// Whether the item is a run or an inline box
     pub kind: LayoutItemKind,
-    /// The index of the run or inline box in the runs or inline_boxes vec
+    /// The index of the run or inline box in the runs or `inline_boxes` vec
     pub index: usize,
     /// Bidi level for the item (used for reordering)
     pub bidi_level: u8,
@@ -185,7 +185,7 @@ pub enum LayoutItemKind {
 pub struct LayoutItem {
     /// Whether the item is a run or an inline box
     pub kind: LayoutItemKind,
-    /// The index of the run or inline box in the runs or inline_boxes vec
+    /// The index of the run or inline box in the runs or `inline_boxes` vec
     pub index: usize,
     /// Bidi level for the item (used for reordering)
     pub bidi_level: u8,
