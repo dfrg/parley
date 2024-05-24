@@ -17,6 +17,7 @@ pub use swash;
 
 mod bidi;
 pub mod font;
+mod inline_box;
 mod resolve;
 mod shape;
 mod swash_convert;

@@ -1,0 +1,14 @@
+/// A box to be laid out inline with text
+#[derive(Debug, Clone)]
+pub struct InlineBox {
+    /// User-specified identifier for the box, which can be used by the user to determine which box in
+    /// parley's output corresponds to which box in it's input.
+    pub id: u64,
+    /// The byte offset into the underlying text string at which the box should be placed.
+    /// This must not be within a unicode code point.
+    pub index: usize,
+    /// The width of the box in pixels
+    pub width: f32,
+    /// The height of the box in pixels
+    pub height: f32,
+}

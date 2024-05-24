@@ -1,6 +1,7 @@
 // Copyright 2021 the Parley Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use crate::inline_box::InlineBox;
 use crate::layout::{Alignment, Glyph, LineMetrics, RunMetrics, Style};
 use crate::style::Brush;
 use crate::util::*;
@@ -169,6 +170,7 @@ pub struct LayoutData<B: Brush> {
     pub fonts: Vec<Font>,
     pub coords: Vec<i16>,
     pub styles: Vec<Style<B>>,
+    pub inline_boxes: Vec<InlineBox>,
     pub runs: Vec<RunData>,
     pub clusters: Vec<ClusterData>,
     pub glyphs: Vec<Glyph>,
@@ -189,6 +191,7 @@ impl<B: Brush> Default for LayoutData<B> {
             fonts: Vec::new(),
             coords: Vec::new(),
             styles: Vec::new(),
+            inline_boxes: Vec::new(),
             runs: Vec::new(),
             clusters: Vec::new(),
             glyphs: Vec::new(),
@@ -210,6 +213,7 @@ impl<B: Brush> LayoutData<B> {
         self.fonts.clear();
         self.coords.clear();
         self.styles.clear();
+        self.inline_boxes.clear();
         self.runs.clear();
         self.clusters.clear();
         self.glyphs.clear();
