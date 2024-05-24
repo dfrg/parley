@@ -112,13 +112,13 @@ impl<'a, B: Brush> BreakLines<'a, B> {
         // It exists solely to cut down on the boilerplate for accessing the self variables while
         // keeping the borrow checker happy
         macro_rules! try_commit {
-            ($max_advance:expr, $alignment:expr, $break_reason:expr) => {
+            ($break_reason:expr) => {
                 commit_line(
                     self.layout,
                     &mut self.lines,
                     &mut self.state.line,
-                    $max_advance,
-                    $alignment,
+                    max_advance,
+                    alignment,
                     $break_reason,
                 )
             };
@@ -153,7 +153,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                             // We skip a mandatory break immediately after another mandatory break
                             self.state.line.skip_mandatory_break = true;
 
-                            if try_commit!(max_advance, alignment, BreakReason::Explicit) {
+                            if try_commit!(BreakReason::Explicit) {
                                 return self.start_new_line();
                             }
                         }
@@ -214,7 +214,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                         self.state.line.runs.end = self.state.run_idx + 1;
                         self.state.line.clusters.end = self.state.cluster_idx + 1;
                         self.state.line.x = next_x;
-                        if try_commit!(max_advance, alignment, BreakReason::Regular) {
+                        if try_commit!(BreakReason::Regular) {
                             self.state.prev_boundary = None;
                             self.state.cluster_idx += 1;
                             return self.start_new_line();
@@ -230,7 +230,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                             self.state.line.x = next_x;
                             self.state.cluster_idx += 1;
 
-                            if try_commit!(max_advance, alignment, BreakReason::Emergency) {
+                            if try_commit!(BreakReason::Emergency) {
                                 self.state.prev_boundary = None;
                                 self.state.cluster_idx += 1;
                                 return self.start_new_line();
@@ -240,10 +240,10 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                         // item/run/cluster iteration state back to how it was when the line-breaking opportunity was encountered
                         else {
                             self.state.line = prev.state;
-                            if try_commit!(max_advance, alignment, BreakReason::Regular) {
+                            if try_commit!(BreakReason::Regular) {
                                 // This wasn't previously here, but was implied by the self.state.prev_boundary.take() above
                                 // Adding for consistency between branches.
-                                self.state.prev_boundary = None; 
+                                self.state.prev_boundary = None;
                                 // Revert boundary state to prev state
                                 self.state.item_idx = prev.item_idx;
                                 self.state.run_idx = prev.run_idx;
@@ -262,7 +262,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                             self.state.line.x = next_x;
                             self.state.cluster_idx += 1;
                         }
-                        if try_commit!(max_advance, alignment, BreakReason::Emergency) {
+                        if try_commit!(BreakReason::Emergency) {
                             self.state.items = self.lines.line_items.len();
                             self.state.lines = self.lines.lines.len();
                             self.state.line.x = 0.;
@@ -279,7 +279,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
         if self.state.line.runs.end == 0 {
             self.state.line.runs.end = 1;
         }
-        if try_commit!(max_advance, alignment, BreakReason::None) {
+        if try_commit!(BreakReason::None) {
             self.done = true;
             return self.start_new_line();
         }
