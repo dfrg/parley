@@ -102,6 +102,8 @@ pub struct LineData {
     pub text_range: Range<usize>,
     /// Range of line runs.
     pub run_range: Range<usize>,
+    /// Range of line items.
+    pub item_range: Range<usize>,
     /// Metrics for the line.
     pub metrics: LineMetrics,
     /// The cause of the line break.
