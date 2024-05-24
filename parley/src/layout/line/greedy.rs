@@ -80,10 +80,13 @@ impl<'a, B: Brush> BreakLines<'a, B> {
     /// Computes the next line in the paragraph. Returns the advance and size
     /// (width and height for horizontal layouts) of the line.
     pub fn break_next(&mut self, max_advance: f32, alignment: Alignment) -> Option<(f32, f32)> {
+        // Maintain iterator state
         if self.done {
             return None;
         }
         self.prev_state = Some(self.state.clone());
+
+        // Iterate over all runs in the Layout
         let run_count = self.layout.runs.len();
         while self.state.i < run_count {
             let run_data = &self.layout.runs[self.state.i];
@@ -329,7 +332,6 @@ impl<'a, B: Brush> BreakLines<'a, B> {
             let mut needs_reorder = false;
             line.text_range.start = usize::MAX;
 
-
             // Compute metrics for the line, but ignore trailing whitespace.
             for line_run in self.lines.line_items[line.run_range.clone()]
                 .iter_mut()
@@ -354,6 +356,9 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                 line.metrics.leading = line.metrics.leading.max(run.metrics.leading * line_height);
                 have_metrics = true;
             }
+
+            // Reorder items (if required). Reordering is required if the line contains
+            // a mix of bidi levels (a mix of LTR and RTL text)
             if needs_reorder && run_count > 1 {
                 reorder_line_items(&mut self.lines.line_items[line.run_range.clone()]);
             }
@@ -376,53 +381,58 @@ impl<'a, B: Brush> BreakLines<'a, B> {
             };
             line.metrics.trailing_whitespace = trailing_whitespace;
 
-            // Justify line items
+            // Apply alignment to line items
             let has_finite_width = line.max_advance.is_finite() && line.max_advance < f32::MAX;
-            if line.alignment != Alignment::Start && has_finite_width {
-                let extra = line.max_advance - line.metrics.advance + trailing_whitespace;
-                if extra > 0. {
-                    let offset = if line.alignment == Alignment::Middle {
-                        extra * 0.5
-                    } else {
-                        extra
-                    };
-                    if line.alignment == Alignment::Justified {
-                        if line.break_reason != BreakReason::None && line.num_spaces != 0 {
-                            let adjustment = extra / line.num_spaces as f32;
-                            let mut applied = 0;
-                            for line_run in &self.lines.line_items[line.run_range.clone()] {
-                                if line_run.bidi_level & 1 != 0 {
-                                    for cluster in self.layout.clusters
-                                        [line_run.cluster_range.clone()]
-                                    .iter_mut()
-                                    .rev()
-                                    {
-                                        if applied == line.num_spaces {
-                                            break;
+            if has_finite_width {
+                // Compute free space. Alignment only applies if free_space > 0
+                let free_space = line.max_advance - line.metrics.advance + trailing_whitespace;
+                if free_space > 0. {
+                    match line.alignment {
+                        Alignment::Start => {
+                            // Do nothing
+                        }
+                        Alignment::End => {
+                            line.metrics.offset = free_space;
+                        }
+                        Alignment::Middle => {
+                            line.metrics.offset = free_space * 0.5;
+                        }
+                        Alignment::Justified => {
+                            if line.break_reason != BreakReason::None && line.num_spaces != 0 {
+                                let adjustment = free_space / line.num_spaces as f32;
+                                let mut applied = 0;
+                                for line_run in &self.lines.line_items[line.run_range.clone()] {
+                                    let clusters =
+                                        &mut self.layout.clusters[line_run.cluster_range.clone()];
+
+                                    // Iterate over clusters in the run
+                                    //   - Iterate forwards for even bidi levels (which represent RTL runs)
+                                    //   - Iterate backwards for odd bidi levels (which represent RTL runs)
+                                    let bidi_level_is_odd = line_run.bidi_level & 1 != 0;
+                                    if bidi_level_is_odd {
+                                        for cluster in clusters.iter_mut().rev() {
+                                            if applied == line.num_spaces {
+                                                break;
+                                            }
+                                            if cluster.info.whitespace().is_space_or_nbsp() {
+                                                cluster.advance += adjustment;
+                                                applied += 1;
+                                            }
                                         }
-                                        if cluster.info.whitespace().is_space_or_nbsp() {
-                                            cluster.advance += adjustment;
-                                            applied += 1;
-                                        }
-                                    }
-                                } else {
-                                    for cluster in self.layout.clusters
-                                        [line_run.cluster_range.clone()]
-                                    .iter_mut()
-                                    {
-                                        if applied == line.num_spaces {
-                                            break;
-                                        }
-                                        if cluster.info.whitespace().is_space_or_nbsp() {
-                                            cluster.advance += adjustment;
-                                            applied += 1;
+                                    } else {
+                                        for cluster in clusters.iter_mut() {
+                                            if applied == line.num_spaces {
+                                                break;
+                                            }
+                                            if cluster.info.whitespace().is_space_or_nbsp() {
+                                                cluster.advance += adjustment;
+                                                applied += 1;
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    } else {
-                        line.metrics.offset = offset;
                     }
                 }
             }
