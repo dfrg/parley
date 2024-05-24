@@ -137,7 +137,7 @@ impl<B: Brush> Default for Layout<B> {
 pub struct Run<'a, B: Brush> {
     layout: &'a LayoutData<B>,
     data: &'a RunData,
-    line_data: Option<&'a LineRunData>,
+    line_data: Option<&'a LineItemData>,
 }
 
 /// Atomic unit of text.

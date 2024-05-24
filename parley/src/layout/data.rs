@@ -120,12 +120,20 @@ impl LineData {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct LineRunData {
-    /// Index of the original run.
-    pub run_index: usize,
-    /// Bidi level for the run.
+#[derive(Debug, Clone)]
+pub struct LineItemData {
+    /// Whether the item is a run or an inline box
+    pub kind: LayoutItemKind,
+    /// The index of the run or inline box in the runs or inline_boxes vec
+    pub index: usize,
+    /// Bidi level for the item (used for reordering)
     pub bidi_level: u8,
+    /// Advance (size in direction of text flow) for the run.
+    pub advance: f32,
+
+    // Fields that only apply to text runs (Ignored for boxes)
+    // TODO: factor this out?
+
     /// True if the run is composed entirely of whitespace.
     pub is_whitespace: bool,
     /// True if the run ends in whitespace.
@@ -134,31 +142,39 @@ pub struct LineRunData {
     pub text_range: Range<usize>,
     /// Range of clusters.
     pub cluster_range: Range<usize>,
-    /// Advance for the run.
-    pub advance: f32,
 }
 
-impl LineRunData {
+impl LineItemData {
     pub fn compute_line_height<B: Brush>(&self, layout: &LayoutData<B>) -> f32 {
-        let mut line_height = 0f32;
-        let glyph_start = layout.runs[self.run_index].glyph_start;
-        for cluster in &layout.clusters[self.cluster_range.clone()] {
-            if cluster.glyph_len != 0xFF && cluster.has_divergent_styles() {
-                let start = glyph_start + cluster.glyph_offset as usize;
-                let end = start + cluster.glyph_len as usize;
-                for glyph in &layout.glyphs[start..end] {
-                    line_height = line_height.max(layout.styles[glyph.style_index()].line_height);
+        match self.kind {
+            LayoutItemKind::TextRun => {
+                let mut line_height = 0f32;
+                let run = &layout.runs[self.index];
+                let glyph_start = run.glyph_start;
+                for cluster in &layout.clusters[run.cluster_range.clone()] {
+                    if cluster.glyph_len != 0xFF && cluster.has_divergent_styles() {
+                        let start = glyph_start + cluster.glyph_offset as usize;
+                        let end = start + cluster.glyph_len as usize;
+                        for glyph in &layout.glyphs[start..end] {
+                            line_height =
+                                line_height.max(layout.styles[glyph.style_index()].line_height);
+                        }
+                    } else {
+                        line_height = line_height
+                            .max(layout.styles[cluster.style_index as usize].line_height);
+                    }
                 }
-            } else {
-                line_height =
-                    line_height.max(layout.styles[cluster.style_index as usize].line_height);
+                line_height
             }
+            LayoutItemKind::InlineBox => {
+                // TODO: account for vertical alignment (e.g. baseline alignment)
+                layout.inline_boxes[self.index].height
+            },
         }
-        line_height
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LayoutItemKind {
     TextRun,
     InlineBox,
@@ -185,14 +201,20 @@ pub struct LayoutData<B: Brush> {
     pub height: f32,
     pub fonts: Vec<Font>,
     pub coords: Vec<i16>,
+
+    // Input / output of style resolution
     pub styles: Vec<Style<B>>,
     pub inline_boxes: Vec<InlineBox>,
+
+    // Output of shaping
     pub runs: Vec<RunData>,
     pub items: Vec<LayoutItem>,
     pub clusters: Vec<ClusterData>,
     pub glyphs: Vec<Glyph>,
+
+    // Output of line breaking
     pub lines: Vec<LineData>,
-    pub line_runs: Vec<LineRunData>,
+    pub line_items: Vec<LineItemData>,
 }
 
 impl<B: Brush> Default for LayoutData<B> {
@@ -214,7 +236,7 @@ impl<B: Brush> Default for LayoutData<B> {
             clusters: Vec::new(),
             glyphs: Vec::new(),
             lines: Vec::new(),
-            line_runs: Vec::new(),
+            line_items: Vec::new(),
         }
     }
 }
@@ -237,12 +259,11 @@ impl<B: Brush> LayoutData<B> {
         self.clusters.clear();
         self.glyphs.clear();
         self.lines.clear();
-        self.line_runs.clear();
+        self.line_items.clear();
     }
 
     /// Push an inline box to the list of items
     pub fn push_inline_box(&mut self, index: usize) {
-
         // Give the box the same bidi level as the preceding text run
         // (or else default to 0 if there is not yet a text run)
         let bidi_level = self.runs.last().map(|r| r.bidi_level).unwrap_or(0);

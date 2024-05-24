@@ -27,26 +27,34 @@ impl<'a, B: Brush> Line<'a, B> {
     }
 
     /// Returns the run at the specified index.
-    pub fn get(&self, index: usize) -> Option<Run<'a, B>> {
+    pub fn get_run(&self, index: usize) -> Option<Run<'a, B>> {
         let index = self.data.run_range.start + index;
         if index >= self.data.run_range.end {
             return None;
         }
-        let line_data = self.layout.line_runs.get(index)?;
-        Some(Run {
-            layout: self.layout,
-            data: self.layout.runs.get(line_data.run_index)?,
-            line_data: Some(line_data),
-        })
+        let item = self.layout.line_items.get(index)?;
+
+        if item.kind == LayoutItemKind::TextRun {
+            Some(Run {
+                layout: self.layout,
+                data: self.layout.runs.get(item.index)?,
+                line_data: Some(item),
+            })
+        } else {
+            None
+        }
     }
 
     /// Returns an iterator over the runs for the line.
+    // TODO: provide iterator over inline_boxes and items
     pub fn runs(&self) -> impl Iterator<Item = Run<'a, B>> + 'a + Clone {
         let copy = self.clone();
-        let line_runs = &copy.layout.line_runs[self.data.run_range.clone()];
-        line_runs.iter().map(move |line_data| Run {
+        let line_items = &copy.layout.line_items[self.data.run_range.clone()];
+        line_items.iter()
+        .filter(|item| item.kind == LayoutItemKind::TextRun)
+        .map(move |line_data| Run {
             layout: copy.layout,
-            data: &copy.layout.runs[line_data.run_index],
+            data: &copy.layout.runs[line_data.index],
             line_data: Some(line_data),
         })
     }
@@ -166,7 +174,7 @@ impl<'a, B: Brush> Iterator for GlyphRunIter<'a, B> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let run = self.line.get(self.run_index)?;
+            let run = self.line.get_run(self.run_index)?;
             let mut iter = run
                 .visual_clusters()
                 .flat_map(|c| c.glyphs())
