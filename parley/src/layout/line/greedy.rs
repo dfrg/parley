@@ -27,6 +27,7 @@ impl LineLayout {
 #[derive(Clone, Default)]
 struct LineState {
     x: f32,
+    items: Range<usize>,
     runs: Range<usize>,
     clusters: Range<usize>,
     skip_mandatory_break: bool,
@@ -62,11 +63,21 @@ struct BreakerState {
 impl BreakerState {
     /// Add the cluster(s) currently being evaluated to the current line
     fn append_cluster_to_line(&mut self, next_x: f32) {
+        self.line.items.end = self.run_idx + 1;
         self.line.runs.end = self.run_idx + 1;
         self.line.clusters.end = self.cluster_idx + 1;
         self.line.x = next_x;
         // Would like to add:
         // self.cluster_idx += 1;
+    }
+
+    /// Add inline box to line
+    fn append_inline_box_to_line(&mut self, next_x: f32) {
+        self.item_idx += 1;
+        self.line.items.end += 1;
+        self.line.x = next_x;
+        // Would like to add:
+        // self.item_idx += 1;
     }
 
     /// Store the current iteration state so that we can revert to it if we later want to take
@@ -113,8 +124,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
         self.state.items = self.lines.line_items.len();
         self.state.lines = self.lines.lines.len();
         self.state.line.x = 0.;
-        // Would like to add:
-        // self.state.prev_boundary = None;
+        self.state.prev_boundary = None; // Added by Nico
         self.last_line_data()
     }
 
@@ -149,112 +159,31 @@ impl<'a, B: Brush> BreakLines<'a, B> {
         }
 
         // Iterate over remaining runs in the Layout
-        let run_count = self.layout.runs.len();
-        while self.state.run_idx < run_count {
-            let run_data = &self.layout.runs[self.state.run_idx];
-            let run = Run::new(self.layout, run_data, None);
-            let cluster_start = run_data.cluster_range.start;
-            let cluster_end = run_data.cluster_range.end;
+        let item_count = self.layout.items.len();
+        while self.state.item_idx < item_count {
+            let item = &self.layout.items[self.state.item_idx];
 
-            // Iterate over remaining clusters in the Run
-            while self.state.cluster_idx < cluster_end {
-                let cluster = run.get(self.state.cluster_idx - cluster_start).unwrap();
+            match item.kind {
+                LayoutItemKind::InlineBox => {
+                    let inline_box = &self.layout.inline_boxes[item.index];
 
-                // Retrieve metadata about the cluster
-                let is_ligature_continuation = cluster.is_ligature_continuation();
-                let is_space = cluster.info().whitespace().is_space_or_nbsp();
-                let boundary = cluster.info().boundary();
+                    // Compute the x position of the content being currently processed
+                    let next_x = self.state.line.x + inline_box.width;
 
-                // Handle boundary clusters
-                match boundary {
-                    // A hard line break (e.g. CRLF or similar)
-                    Boundary::Mandatory => {
-                        if !self.state.line.skip_mandatory_break {
-                            self.state.prev_boundary = None;
-                            self.state.line.runs.end = self.state.run_idx + 1;
-                            self.state.line.clusters.end = self.state.cluster_idx;
+                    // If the box fits on the current line (or we are at the start of the current line)
+                    // then simply move on to the next item
+                    if next_x <= max_advance {
+                        self.state.item_idx += 1;
+                        self.state.append_inline_box_to_line(next_x);
 
-                            // We skip a mandatory break immediately after another mandatory break
-                            self.state.line.skip_mandatory_break = true;
-
-                            if try_commit!(BreakReason::Explicit) {
-                                return self.start_new_line();
-                            }
-                        }
-                    }
-                    // A line-breaking opportunity. We save our state at this point so that we can later go back and
-                    // "take" the line-breaking opportunity.
-                    Boundary::Line => {
-                        // We do not currently handle breaking within a ligature, so we ignore boundaries in such a position.
-                        if !is_ligature_continuation {
-                            self.state.mark_line_break_opportunity();
-                        }
-                    }
-                    // Not a line boundary
-                    _ => {}
-                }
-
-                // We only skip a mandatory break immediately after another mandatory break so if we
-                // have got this far then we should disable mandatory break skipping
-                self.state.line.skip_mandatory_break = false;
-
-                // If current cluster is the start of a ligature, then advance state to include
-                // the remaining clusters that make up the ligature
-                let mut advance = cluster.advance();
-                if cluster.is_ligature_start() {
-                    while let Some(cluster) = run.get(self.state.cluster_idx + 1) {
-                        if !cluster.is_ligature_continuation() {
-                            break;
-                        } else {
-                            advance += cluster.advance();
-                            self.state.cluster_idx += 1;
-                        }
-                    }
-                }
-
-                // Compute the x position of the content being currently processed
-                let next_x = self.state.line.x + advance;
-
-                // If that x position does NOT exceed max_advance then we simply add the cluster(s) to the current line
-                if next_x <= max_advance {
-                    self.state.line.runs.end = self.state.run_idx + 1;
-                    self.state.line.clusters.end = self.state.cluster_idx + 1;
-                    self.state.line.x = next_x;
-                    self.state.cluster_idx += 1;
-                    if is_space {
-                        self.state.line.num_spaces += 1;
-                    }
-                }
-                // Else we line break:
-                else {
-                    // Handle case where cluster is space character. Hang overflowing whitespace.
-                    if is_space {
-                        self.state.append_cluster_to_line(next_x);
-                        if try_commit!(BreakReason::Regular) {
-                            // TODO: can this be hoisted out of the conditional?
-                            self.state.cluster_idx += 1;
-                            self.state.prev_boundary = None;
-                            return self.start_new_line();
-                        }
-                    }
-                    // Handle the (common) case where we have previously encountered a line-breaking opportunity in the current line
-                    else if let Some(prev) = self.state.prev_boundary.take() {
-                        // If the previous line-breaking opportunity was at x=0 (i.e. the very start of a line) then we shouldn't
-                        // insert another line break. We should accept the overflowing fragment on the current line.
-                        if prev.state.x == 0. {
-                            self.state.append_cluster_to_line(next_x);
-                            self.state.cluster_idx += 1;
-
-                            if try_commit!(BreakReason::Emergency) {
-                                self.state.cluster_idx += 1;
-                                self.state.prev_boundary = None;
-                                return self.start_new_line();
-                            }
-                        }
-                        // Otherwise we "take" the line-breaking opportunity by starting a new line and resetting our
-                        // item/run/cluster iteration state back to how it was when the line-breaking opportunity was encountered
-                        else {
-
+                        // We can always line break after an inline box
+                        self.state.mark_line_break_opportunity();
+                    } else {
+                        // If there we have previously encountered line-breaking opportunity on this line, then take it and
+                        // then reset our item/run/cluster iteration state back to how it was when the line-breaking opportunity was encountered
+                        if let Some(prev) = self.state.prev_boundary.take() {
+                            debug_assert!(prev.state.x != 0.0);
+                                
                             // Q: Why do we revert the line state here, but only revert the indexes if the commit suceeds?
                             self.state.line = prev.state;
                             if try_commit!(BreakReason::Regular) {
@@ -263,31 +192,148 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                                 self.state.run_idx = prev.run_idx;
                                 self.state.cluster_idx = prev.cluster_idx;
 
-                                // This line wasn't previously here, but was implied by the self.state.prev_boundary.take() above
-                                // Adding for consistency between branches.
-                                self.state.prev_boundary = None;
-
+                                return self.start_new_line();
+                            }
+                        }
+                        // Perform an emergency line break
+                        else {
+                            // If we're at the start of the line, this box will never fit, so consume it and accept the overflow.
+                            if self.state.line.x == 0.0 {
+                                self.state.append_inline_box_to_line(next_x);
+                            }
+                            if try_commit!(BreakReason::Regular) {
+                                self.state.item_idx += 1;
                                 return self.start_new_line();
                             }
                         }
                     }
-                    // Otherwise perform an emergency line break
-                    else {
-                        // If we're at the start of the line, this particular cluster will never fit,
-                        // so consume it and accept the overflow.
-                        if self.state.line.x == 0. {
+                },
+                LayoutItemKind::TextRun => {
+                    let run_idx = item.index;
+                    let run_data = &self.layout.runs[run_idx];
+                    let run = Run::new(self.layout, run_data, None);
+                    let cluster_start = run_data.cluster_range.start;
+                    let cluster_end = run_data.cluster_range.end;
+
+                    // Iterate over remaining clusters in the Run
+                    while self.state.cluster_idx < cluster_end {
+                        let cluster = run.get(self.state.cluster_idx - cluster_start).unwrap();
+
+                        // Retrieve metadata about the cluster
+                        let is_ligature_continuation = cluster.is_ligature_continuation();
+                        let is_space = cluster.info().whitespace().is_space_or_nbsp();
+                        let boundary = cluster.info().boundary();
+
+                        // Handle boundary clusters
+                        match boundary {
+                            // A hard line break (e.g. CRLF or similar)
+                            Boundary::Mandatory => {
+                                if !self.state.line.skip_mandatory_break {
+                                    self.state.prev_boundary = None;
+                                    self.state.line.runs.end = self.state.run_idx + 1;
+                                    self.state.line.clusters.end = self.state.cluster_idx;
+
+                                    // We skip a mandatory break immediately after another mandatory break
+                                    self.state.line.skip_mandatory_break = true;
+
+                                    if try_commit!(BreakReason::Explicit) {
+                                        return self.start_new_line();
+                                    }
+                                }
+                            }
+                            // A line-breaking opportunity. We save our state at this point so that we can later go back and
+                            // "take" the line-breaking opportunity.
+                            Boundary::Line => {
+                                // We do not currently handle breaking within a ligature, so we ignore boundaries in such a position.
+                                //
+                                // We also don't record boundaries when the advance is 0. As we do not want overflowing content to cause extra consecutive
+                                // line breaks. We should accept the overflowing fragment in that scenario.
+                                if !is_ligature_continuation && self.state.line.x != 0.0 {
+                                    self.state.mark_line_break_opportunity();
+                                }
+                            }
+                            // Not a line boundary
+                            _ => {}
+                        }
+
+                        // We only skip a mandatory break immediately after another mandatory break so if we
+                        // have got this far then we should disable mandatory break skipping
+                        self.state.line.skip_mandatory_break = false;
+
+                        // If current cluster is the start of a ligature, then advance state to include
+                        // the remaining clusters that make up the ligature
+                        let mut advance = cluster.advance();
+                        if cluster.is_ligature_start() {
+                            while let Some(cluster) = run.get(self.state.cluster_idx + 1) {
+                                if !cluster.is_ligature_continuation() {
+                                    break;
+                                } else {
+                                    advance += cluster.advance();
+                                    self.state.cluster_idx += 1;
+                                }
+                            }
+                        }
+
+                        // Compute the x position of the content being currently processed
+                        let next_x = self.state.line.x + advance;
+
+                        // If that x position does NOT exceed max_advance then we simply add the cluster(s) to the current line
+                        if next_x <= max_advance {
                             self.state.append_cluster_to_line(next_x);
                             self.state.cluster_idx += 1;
+                            if is_space {
+                                self.state.line.num_spaces += 1;
+                            }
                         }
-                        if try_commit!(BreakReason::Emergency) {
-                            self.state.cluster_idx += 1;
-                            self.state.prev_boundary = None;
-                            return self.start_new_line();
+                        // Else we line break:
+                        else {
+                            // Handle case where cluster is space character. Hang overflowing whitespace.
+                            if is_space {
+                                self.state.append_cluster_to_line(next_x);
+                                if try_commit!(BreakReason::Regular) {
+                                    // TODO: can this be hoisted out of the conditional?
+                                    self.state.cluster_idx += 1;
+                                    return self.start_new_line();
+                                }
+                            }
+                            // Handle the (common) case where we have previously encountered a line-breaking opportunity in the current line
+                            //
+                            // We "take" the line-breaking opportunity by starting a new line and resetting our
+                            // item/run/cluster iteration state back to how it was when the line-breaking opportunity was encountered
+                            else if let Some(prev) = self.state.prev_boundary.take() {
+                                debug_assert!(prev.state.x != 0.0);
+                                
+                                // Q: Why do we revert the line state here, but only revert the indexes if the commit suceeds?
+                                self.state.line = prev.state;
+                                if try_commit!(BreakReason::Regular) {
+                                    // Revert boundary state to prev state
+                                    self.state.item_idx = prev.item_idx;
+                                    self.state.run_idx = prev.run_idx;
+                                    self.state.cluster_idx = prev.cluster_idx;
+
+                                    return self.start_new_line();
+                                }
+                            }
+                            // Otherwise perform an emergency line break
+                            // TODO: make emergency line breaks controllable via a setting
+                            else {
+                                // If we're at the start of the line, this particular cluster will never fit,
+                                // so consume it and accept the overflow.
+                                if self.state.line.x == 0. {
+                                    self.state.append_cluster_to_line(next_x);
+                                    self.state.cluster_idx += 1;
+                                }
+                                if try_commit!(BreakReason::Emergency) {
+                                    self.state.cluster_idx += 1;
+                                    return self.start_new_line();
+                                }
+                            }
                         }
                     }
+                    self.state.run_idx += 1;
+                    self.state.item_idx += 1;
                 }
             }
-            self.state.run_idx += 1;
         }
 
         if self.state.line.runs.end == 0 {
