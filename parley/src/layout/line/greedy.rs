@@ -397,16 +397,16 @@ impl<'a, B: Brush> BreakLines<'a, B> {
             let run_base = line.run_range.start;
             let run_count = line.run_range.end - run_base;
 
-            // Reset mutable state for line
+            // Reset metrics for line
             line.metrics.ascent = 0.;
             line.metrics.descent = 0.;
             line.metrics.leading = 0.;
             line.metrics.offset = 0.;
-            let mut have_metrics = false;
-            let mut needs_reorder = false;
             line.text_range.start = usize::MAX;
 
             // Compute metrics for the line, but ignore trailing whitespace.
+            let mut have_metrics = false;
+            let mut needs_reorder = false;
             for line_run in self.lines.line_items[line.run_range.clone()]
                 .iter_mut()
                 .rev()
