@@ -145,7 +145,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
         // This macro simply calls the `commit_line` with the provided arguments and some parts of self.
         // It exists solely to cut down on the boilerplate for accessing the self variables while
         // keeping the borrow checker happy
-        macro_rules! try_commit {
+        macro_rules! try_commit_line {
             ($break_reason:expr) => {
                 commit_line(
                     self.layout,
@@ -183,10 +183,10 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                         // then reset our item/run/cluster iteration state back to how it was when the line-breaking opportunity was encountered
                         if let Some(prev) = self.state.prev_boundary.take() {
                             debug_assert!(prev.state.x != 0.0);
-                                
+
                             // Q: Why do we revert the line state here, but only revert the indexes if the commit suceeds?
                             self.state.line = prev.state;
-                            if try_commit!(BreakReason::Regular) {
+                            if try_commit_line!(BreakReason::Regular) {
                                 // Revert boundary state to prev state
                                 self.state.item_idx = prev.item_idx;
                                 self.state.run_idx = prev.run_idx;
@@ -201,13 +201,13 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                             if self.state.line.x == 0.0 {
                                 self.state.append_inline_box_to_line(next_x);
                             }
-                            if try_commit!(BreakReason::Regular) {
+                            if try_commit_line!(BreakReason::Regular) {
                                 self.state.item_idx += 1;
                                 return self.start_new_line();
                             }
                         }
                     }
-                },
+                }
                 LayoutItemKind::TextRun => {
                     let run_idx = item.index;
                     let run_data = &self.layout.runs[run_idx];
@@ -236,7 +236,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                                     // We skip a mandatory break immediately after another mandatory break
                                     self.state.line.skip_mandatory_break = true;
 
-                                    if try_commit!(BreakReason::Explicit) {
+                                    if try_commit_line!(BreakReason::Explicit) {
                                         return self.start_new_line();
                                     }
                                 }
@@ -290,7 +290,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                             // Handle case where cluster is space character. Hang overflowing whitespace.
                             if is_space {
                                 self.state.append_cluster_to_line(next_x);
-                                if try_commit!(BreakReason::Regular) {
+                                if try_commit_line!(BreakReason::Regular) {
                                     // TODO: can this be hoisted out of the conditional?
                                     self.state.cluster_idx += 1;
                                     return self.start_new_line();
@@ -302,10 +302,10 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                             // item/run/cluster iteration state back to how it was when the line-breaking opportunity was encountered
                             else if let Some(prev) = self.state.prev_boundary.take() {
                                 debug_assert!(prev.state.x != 0.0);
-                                
+
                                 // Q: Why do we revert the line state here, but only revert the indexes if the commit suceeds?
                                 self.state.line = prev.state;
-                                if try_commit!(BreakReason::Regular) {
+                                if try_commit_line!(BreakReason::Regular) {
                                     // Revert boundary state to prev state
                                     self.state.item_idx = prev.item_idx;
                                     self.state.run_idx = prev.run_idx;
@@ -323,7 +323,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                                     self.state.append_cluster_to_line(next_x);
                                     self.state.cluster_idx += 1;
                                 }
-                                if try_commit!(BreakReason::Emergency) {
+                                if try_commit_line!(BreakReason::Emergency) {
                                     self.state.cluster_idx += 1;
                                     return self.start_new_line();
                                 }
@@ -339,7 +339,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
         if self.state.line.runs.end == 0 {
             self.state.line.runs.end = 1;
         }
-        if try_commit!(BreakReason::None) {
+        if try_commit_line!(BreakReason::None) {
             self.done = true;
             return self.start_new_line();
         }
