@@ -16,20 +16,30 @@ impl<'a, B: Brush> Line<'a, B> {
         self.data.text_range.clone()
     }
 
-    /// Returns the number of runs in the line.
+    /// Returns the number of items in the line.
     pub fn len(&self) -> usize {
-        self.data.run_range.len()
+        self.data.item_range.len()
     }
 
     /// Returns true if the line is empty.
     pub fn is_empty(&self) -> bool {
-        self.data.run_range.is_empty()
+        self.data.item_range.is_empty()
+    }
+
+    /// Returns the run at the specified index.
+    pub fn get_item_kind(&self, index: usize) -> Option<LayoutItemKind> {
+        let index = self.data.item_range.start + index;
+        if index >= self.data.item_range.end {
+            return None;
+        }
+        let item = self.layout.line_items.get(index)?;
+        Some(item.kind)
     }
 
     /// Returns the run at the specified index.
     pub fn get_run(&self, index: usize) -> Option<Run<'a, B>> {
-        let index = self.data.run_range.start + index;
-        if index >= self.data.run_range.end {
+        let index = self.data.item_range.start + index;
+        if index >= self.data.item_range.end {
             return None;
         }
         let item = self.layout.line_items.get(index)?;
@@ -49,7 +59,7 @@ impl<'a, B: Brush> Line<'a, B> {
     // TODO: provide iterator over inline_boxes and items
     pub fn runs(&self) -> impl Iterator<Item = Run<'a, B>> + 'a + Clone {
         let copy = self.clone();
-        let line_items = &copy.layout.line_items[self.data.run_range.clone()];
+        let line_items = &copy.layout.line_items[self.data.item_range.clone()];
         line_items
             .iter()
             .filter(|item| item.kind == LayoutItemKind::TextRun)
@@ -175,11 +185,19 @@ impl<'a, B: Brush> Iterator for GlyphRunIter<'a, B> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
+            let kind = self.line.get_item_kind(self.run_index)?;
+            if kind == LayoutItemKind::InlineBox {
+                self.run_index += 1;
+                self.glyph_start = 0;
+                continue;
+            }
+
             let run = self.line.get_run(self.run_index)?;
             let mut iter = run
                 .visual_clusters()
                 .flat_map(|c| c.glyphs())
                 .skip(self.glyph_start);
+
             if let Some(first) = iter.next() {
                 let mut advance = first.advance;
                 let style_index = first.style_index();

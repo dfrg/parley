@@ -101,7 +101,7 @@ pub struct LineData {
     /// Range of the source text.
     pub text_range: Range<usize>,
     /// Range of line runs.
-    pub run_range: Range<usize>,
+    // pub run_range: Range<usize>,
     /// Range of line items.
     pub item_range: Range<usize>,
     /// Metrics for the line.
@@ -146,14 +146,13 @@ pub struct LineItemData {
 }
 
 impl LineItemData {
-
     pub fn is_text_run(&self) -> bool {
         self.kind == LayoutItemKind::TextRun
     }
 
-    pub fn is_inline_box(&self) -> bool {
-        self.kind == LayoutItemKind::InlineBox
-    }
+    // pub fn is_inline_box(&self) -> bool {
+    //     self.kind == LayoutItemKind::InlineBox
+    // }
 
     pub fn compute_line_height<B: Brush>(&self, layout: &LayoutData<B>) -> f32 {
         match self.kind {

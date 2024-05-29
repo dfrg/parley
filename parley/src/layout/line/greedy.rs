@@ -231,6 +231,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                                 if !self.state.line.skip_mandatory_break {
                                     self.state.prev_boundary = None;
                                     self.state.line.runs.end = self.state.run_idx + 1;
+                                    self.state.line.items.end = self.state.item_idx + 1;
                                     self.state.line.clusters.end = self.state.cluster_idx;
 
                                     // We skip a mandatory break immediately after another mandatory break
@@ -339,6 +340,9 @@ impl<'a, B: Brush> BreakLines<'a, B> {
         if self.state.line.runs.end == 0 {
             self.state.line.runs.end = 1;
         }
+        if self.state.line.items.end == 0 {
+            self.state.line.items.end = 1;
+        }
         if try_commit_line!(BreakReason::None) {
             self.done = true;
             return self.start_new_line();
@@ -369,7 +373,16 @@ impl<'a, B: Brush> BreakLines<'a, B> {
 
     /// Consumes the line breaker and finalizes all line computations.
     pub fn finish(mut self) {
-        for run in &mut self.lines.line_items {
+        // For each run (item which is a text run):
+        //   - Determine if it consists entirely of whitespace (is_whitespace property)
+        //   - Determine if it has trailing whitespace (has_trailing_whitespace property)
+        for item in &mut self.lines.line_items {
+            // Skip items which are not text runs
+            if item.kind != LayoutItemKind::TextRun {
+                continue;
+            }
+
+            let run = item;
             run.is_whitespace = true;
             if run.bidi_level & 1 != 0 {
                 // RTL runs check for "trailing" whitespace at the front.
@@ -392,11 +405,9 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                 }
             }
         }
+
         let mut y = 0.;
         for line in &mut self.lines.lines {
-            let run_base = line.run_range.start;
-            let run_count = line.run_range.end - run_base;
-
             // Reset metrics for line
             line.metrics.ascent = 0.;
             line.metrics.descent = 0.;
@@ -407,59 +418,95 @@ impl<'a, B: Brush> BreakLines<'a, B> {
             // Compute metrics for the line, but ignore trailing whitespace.
             let mut have_metrics = false;
             let mut needs_reorder = false;
-            for line_run in self.lines.line_items[line.run_range.clone()]
+            for line_item in self.lines.line_items[line.item_range.clone()]
                 .iter_mut()
                 .rev()
             {
-                line.text_range.end = line.text_range.end.max(line_run.text_range.end);
-                line.text_range.start = line.text_range.start.min(line_run.text_range.start);
-                if line_run.bidi_level != 0 {
-                    needs_reorder = true;
+                match line_item.kind {
+                    LayoutItemKind::InlineBox => {
+                        let item = &self.layout.inline_boxes[line_item.index];
+
+                        // Advance is already computed in "commit line" for items
+
+                        // Default vertical alignment is to align the bottom of boxes with the text baseline.
+                        // This is equivalent to the entire height of the box being "ascent"
+                        line.metrics.ascent = line.metrics.ascent.max(item.height);
+
+                        // Mark us as having seen non-whitespace content on this line
+                        have_metrics = true;
+                    }
+                    LayoutItemKind::TextRun => {
+                        // Compute the text range for the line
+                        // Q: Can we not simplify this computation by assuming that items are in order?
+                        line.text_range.end = line.text_range.end.max(line_item.text_range.end);
+                        line.text_range.start =
+                            line.text_range.start.min(line_item.text_range.start);
+
+                        // Mark line as needing bidi re-ordering if it contains any runs with non-zero bidi level
+                        // (zero is the default level, so this is equivalent to marking lines that have multiple levels)
+                        if line_item.bidi_level != 0 {
+                            needs_reorder = true;
+                        }
+
+                        // Ignore trailing whitespace for metrics computation
+                        // (we are iterating backwards so trailing whitespace comes first)
+                        if !have_metrics && line_item.is_whitespace {
+                            continue;
+                        }
+
+                        // Compute the run's advance by summing the advances of it's constituant clusters
+                        line_item.advance = self.layout.clusters[line_item.cluster_range.clone()]
+                            .iter()
+                            .map(|c| c.advance)
+                            .sum();
+
+                        // Compute the run's vertical metrics
+                        let run = &self.layout.runs[line_item.index];
+                        let line_height = line_item.compute_line_height(self.layout);
+                        line.metrics.ascent =
+                            line.metrics.ascent.max(run.metrics.ascent * line_height);
+                        line.metrics.descent =
+                            line.metrics.descent.max(run.metrics.descent * line_height);
+                        line.metrics.leading =
+                            line.metrics.leading.max(run.metrics.leading * line_height);
+
+                        // Mark us as having seen non-whitespace content on this line
+                        have_metrics = true;
+                    }
                 }
-                if !have_metrics && line_run.is_whitespace {
-                    continue;
-                }
-                line_run.advance = self.layout.clusters[line_run.cluster_range.clone()]
-                    .iter()
-                    .map(|c| c.advance)
-                    .sum();
-                let line_height = line_run.compute_line_height(self.layout);
-                let run = &self.layout.runs[line_run.index];
-                line.metrics.ascent = line.metrics.ascent.max(run.metrics.ascent * line_height);
-                line.metrics.descent = line.metrics.descent.max(run.metrics.descent * line_height);
-                line.metrics.leading = line.metrics.leading.max(run.metrics.leading * line_height);
-                have_metrics = true;
             }
 
             // Reorder the items within the line (if required). Reordering is required if the line contains
             // a mix of bidi levels (a mix of LTR and RTL text)
-            if needs_reorder && run_count > 1 {
-                reorder_line_items(&mut self.lines.line_items[line.run_range.clone()]);
+            let item_count = line.item_range.end - line.item_range.start;
+            if needs_reorder && item_count > 1 {
+                reorder_line_items(&mut self.lines.line_items[line.item_range.clone()]);
             }
 
             // Compute size of line's trailing whitespace
-            let trailing_whitespace = if !line.run_range.is_empty() {
-                let last_run = &self.lines.line_items[line.run_range.end - 1];
+            line.metrics.trailing_whitespace = 0.0;
+            if !line.item_range.is_empty() {
+                let last_run = &self
+                    .lines
+                    .line_items
+                    .iter()
+                    .rfind(|item| item.is_text_run())
+                    .unwrap();
                 if !last_run.cluster_range.is_empty() {
                     let cluster = &self.layout.clusters[last_run.cluster_range.end - 1];
                     if cluster.info.whitespace().is_space_or_nbsp() {
-                        cluster.advance
-                    } else {
-                        0.
+                        line.metrics.trailing_whitespace = cluster.advance;
                     }
-                } else {
-                    0.
                 }
-            } else {
-                0.
-            };
-            line.metrics.trailing_whitespace = trailing_whitespace;
+            }
 
             // Apply alignment to line items
             let has_finite_width = line.max_advance.is_finite() && line.max_advance < f32::MAX;
             if has_finite_width {
                 // Compute free space. Alignment only applies if free_space > 0
-                let free_space = line.max_advance - line.metrics.advance + trailing_whitespace;
+                let free_space =
+                    line.max_advance - line.metrics.advance + line.metrics.trailing_whitespace;
+
                 if free_space > 0. {
                     match line.alignment {
                         Alignment::Start => {
@@ -475,14 +522,16 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                             if line.break_reason != BreakReason::None && line.num_spaces != 0 {
                                 let adjustment = free_space / line.num_spaces as f32;
                                 let mut applied = 0;
-                                for line_run in &self.lines.line_items[line.run_range.clone()] {
-                                    let clusters =
-                                        &mut self.layout.clusters[line_run.cluster_range.clone()];
-
+                                for line_item in self.lines.line_items[line.item_range.clone()]
+                                    .iter()
+                                    .filter(|item| item.is_text_run())
+                                {
                                     // Iterate over clusters in the run
                                     //   - Iterate forwards for even bidi levels (which represent RTL runs)
                                     //   - Iterate backwards for odd bidi levels (which represent RTL runs)
-                                    let bidi_level_is_odd = line_run.bidi_level & 1 != 0;
+                                    let clusters =
+                                        &mut self.layout.clusters[line_item.cluster_range.clone()];
+                                    let bidi_level_is_odd = line_item.bidi_level & 1 != 0;
                                     if bidi_level_is_odd {
                                         for cluster in clusters.iter_mut().rev() {
                                             if applied == line.num_spaces {
@@ -513,12 +562,14 @@ impl<'a, B: Brush> BreakLines<'a, B> {
 
             if !have_metrics {
                 // Line consisting entirely of whitespace?
-                if !line.run_range.is_empty() {
-                    let line_run = &self.lines.line_items[line.run_range.start];
-                    let run = &self.layout.runs[line_run.index];
-                    line.metrics.ascent = run.metrics.ascent;
-                    line.metrics.descent = run.metrics.descent;
-                    line.metrics.leading = run.metrics.leading;
+                if !line.item_range.is_empty() {
+                    let line_item = &self.lines.line_items[line.item_range.start];
+                    if line_item.is_text_run() {
+                        let run = &self.layout.runs[line_item.index];
+                        line.metrics.ascent = run.metrics.ascent;
+                        line.metrics.descent = run.metrics.descent;
+                        line.metrics.leading = run.metrics.leading;
+                    }
                 }
             }
 
@@ -571,7 +622,10 @@ fn unjustify<B: Brush>(layout: &mut LayoutData<B>) {
             if line.break_reason != BreakReason::None && line.num_spaces != 0 {
                 let adjustment = extra / line.num_spaces as f32;
                 let mut applied = 0;
-                for line_run in &layout.line_items[line.run_range.clone()] {
+                for line_run in layout.line_items[line.item_range.clone()]
+                    .iter()
+                    .filter(|item| item.is_text_run())
+                {
                     if line_run.bidi_level & 1 != 0 {
                         for cluster in layout.clusters[line_run.cluster_range.clone()]
                             .iter_mut()
@@ -659,82 +713,135 @@ fn commit_line<B: Brush>(
 ) -> bool {
     let is_empty = layout.text_len == 0;
 
+    // Ensure that the cluster endpoint is within range
     state.clusters.end = state.clusters.end.min(layout.clusters.len());
 
-    let last_run = state.runs.len() - 1;
-    let runs_start = lines.line_items.len();
-    for (i, run_data) in layout.runs[state.runs.clone()].iter().enumerate() {
-        let mut cluster_range = run_data.cluster_range.clone();
-        if i == 0 {
-            cluster_range.start = state.clusters.start;
-        }
-        if i == last_run {
-            cluster_range.end = state.clusters.end;
-        }
+    let start_item_idx = lines.line_items.len();
+    // let start_run_idx = lines.line_items.last().map(|item| item.index).unwrap_or(0);
 
-        // Skip empty/invalid clusters
-        if cluster_range.start > cluster_range.end
-            || (!is_empty && cluster_range.start == cluster_range.end)
-        {
-            continue;
+    let items_to_commit = &layout.items[state.items.clone()];
+
+    // Compute first and last run index
+    let is_text_run = |item: &LayoutItem| item.kind == LayoutItemKind::TextRun;
+    let first_run_pos = items_to_commit.iter().position(is_text_run).unwrap_or(0);
+    let last_run_pos = items_to_commit.iter().rposition(is_text_run).unwrap_or(0);
+
+    // // Return if line contains no runs
+    // let (Some(first_run_pos), Some(last_run_pos)) = (first_run_pos, last_run_pos) else {
+    //     return false;
+    // };
+
+    //let runs = &layout.runs[state.runs.clone()];
+    // let start_run_idx = items_to_commit[first_run_pos].index;
+    // let end_run_idx = items_to_commit[last_run_pos].index;
+
+    // Iterate over the items to commit
+    for (i, item) in items_to_commit.iter().enumerate() {
+        // println!("i = {} index = {} {:?}", i, item.index, item.kind);
+
+        match item.kind {
+            LayoutItemKind::InlineBox => {
+                let inline_box = &layout.inline_boxes[item.index];
+
+                lines.line_items.push(LineItemData {
+                    kind: LayoutItemKind::InlineBox,
+                    index: item.index,
+                    bidi_level: item.bidi_level,
+                    advance: inline_box.width,
+
+                    // These properties are ignored for inline boxes. So we just put a dummy value.
+                    is_whitespace: false,
+                    has_trailing_whitespace: false,
+                    cluster_range: 0..0,
+                    text_range: 0..0,
+                });
+            }
+            LayoutItemKind::TextRun => {
+                let run_data = &layout.runs[item.index];
+
+                // Compute cluster range
+                // The first and last ranges have overrides to account for line-breaks within runs
+                let mut cluster_range = run_data.cluster_range.clone();
+                if i == first_run_pos {
+                    cluster_range.start = state.clusters.start;
+                }
+                if i == last_run_pos {
+                    cluster_range.end = state.clusters.end;
+                }
+
+                if cluster_range.start > cluster_range.end
+                    || (!is_empty && cluster_range.start == cluster_range.end)
+                {
+                    // println!("INVALID CLUSTER");
+                    // dbg!(&run_data.text_range);
+                    // dbg!(cluster_range);
+                    continue;
+                }
+
+                // Push run to line
+                let run = Run::new(layout, run_data, None);
+                let text_range = if run_data.cluster_range.is_empty() {
+                    0..0
+                } else {
+                    let first_cluster = run
+                        .get(cluster_range.start - run_data.cluster_range.start)
+                        .unwrap();
+                    let last_cluster = run
+                        .get((cluster_range.end - run_data.cluster_range.start).saturating_sub(1))
+                        .unwrap();
+                    first_cluster.text_range().start..last_cluster.text_range().end
+                };
+
+                lines.line_items.push(LineItemData {
+                    kind: LayoutItemKind::TextRun,
+                    index: item.index,
+                    bidi_level: run_data.bidi_level,
+                    advance: 0.,
+                    is_whitespace: false,
+                    has_trailing_whitespace: false,
+                    cluster_range,
+                    text_range,
+                });
+            }
         }
-
-        // Push run to line
-        let run = Run::new(layout, run_data, None);
-        let text_range = if run_data.cluster_range.is_empty() {
-            0..0
-        } else {
-            let first_cluster = run
-                .get(cluster_range.start - run_data.cluster_range.start)
-                .unwrap();
-            let last_cluster = run
-                .get((cluster_range.end - run_data.cluster_range.start).saturating_sub(1))
-                .unwrap();
-            first_cluster.text_range().start..last_cluster.text_range().end
-        };
-
-        // TODO: check that this is correct with boxes
-        let index = state.runs.start + i;
-        let line_run = LineItemData {
-            kind: LayoutItemKind::TextRun,
-            index,
-            bidi_level: run_data.bidi_level,
-            is_whitespace: false,
-            has_trailing_whitespace: false,
-            cluster_range,
-            text_range,
-            advance: 0.,
-        };
-        lines.line_items.push(line_run);
     }
-    let runs_end = lines.line_items.len();
+    // let end_run_idx = lines.line_items.last().map(|item| item.index).unwrap_or(0);
+    let end_item_idx = lines.line_items.len();
 
-    // If no runs have been added to the line then we cannot have become ready to
-    // commit the line (as we have not changed it at all)
-    //
-    // TODO: work out exactly when this happens
-    if runs_start == runs_end {
+    // Return false and don't commit line if there were no items to process
+    // FIXME: support lines with only inlines boxes
+    if start_item_idx == end_item_idx {
+        // } || first_run_pos == last_run_pos {
         return false;
     }
 
+    // Q: why this special case?
     let mut num_spaces = state.num_spaces;
     if break_reason == BreakReason::Regular {
         num_spaces = num_spaces.saturating_sub(1);
     }
-    let mut line = LineData {
-        run_range: runs_start..runs_end,
+
+    lines.lines.push(LineData {
+        // run_range: start_run_idx..end_run_idx,
+        item_range: start_item_idx..end_item_idx,
         max_advance,
         alignment,
         break_reason,
         num_spaces,
+        metrics: LineMetrics {
+            advance: state.x,
+            ..Default::default()
+        },
         ..Default::default()
-    };
-    line.metrics.advance = state.x;
-    lines.lines.push(line);
+    });
+
+    // Reset state for the new line
     state.clusters.start = state.clusters.end;
     state.clusters.end += 1;
     state.runs.start = state.runs.end - 1;
+    state.items.start = state.items.end - 1;
     state.num_spaces = 0;
+
     true
 }
 
