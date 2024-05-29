@@ -133,6 +133,7 @@ pub fn shape_text<'a, B: Brush>(
     // Iterate over characters in the text
     for ((char_index, ch), (info, style_index)) in text.chars().enumerate().zip(infos) {
         let mut break_run = false;
+        let mut deferred_box: Option<usize> = None;
         let mut script = info.script();
         if !real_script(script) {
             script = item.script;
@@ -162,15 +163,16 @@ pub fn shape_text<'a, B: Brush>(
         //   - We do this *before* processing the text run because a box at index 0 should
         //     be placed before item 0
         while let Some((box_idx, inline_box)) = current_box {
+            // println!("{} {}", char_index, inline_box.index);
+
             if inline_box.index == char_index {
                 break_run = true;
-
-                // Push the box to the list of items
-                layout.data.push_inline_box(box_idx);
-
+                deferred_box = Some(box_idx);
                 // Update the current box to the next box
                 current_box = inline_box_iter.next();
-            }
+            } else {
+                break;
+            };
         }
 
         if break_run && !text_range.is_empty() {
@@ -184,6 +186,12 @@ pub fn shape_text<'a, B: Brush>(
             text_range.start = text_range.end;
             char_range.start = char_range.end;
         }
+
+        if let Some(box_idx) = deferred_box.take() {
+            // Push the box to the list of items
+            layout.data.push_inline_box(box_idx);
+        }
+
         text_range.end += ch.len_utf8();
         char_range.end += 1;
     }

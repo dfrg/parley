@@ -172,11 +172,11 @@ impl<'a, B: Brush, T: TextSource> RangedBuilder<'a, B, T> {
             }
         }));
 
-        // Move inline boxes into the layout
-        lcx.inline_boxes.clear();
-        core::mem::swap(&mut layout.data.inline_boxes, &mut lcx.inline_boxes);
+        // Sort the inline boxes
         // Note: It's important that this is a stable sort to allow users to control the order of contiguous inline boxes
-        layout.data.inline_boxes.sort_by_key(|b| b.index);
+        lcx.inline_boxes.sort_by_key(|b| b.index);
+
+        // dbg!(&lcx.inline_boxes);
 
         {
             let query = fcx.collection.query(&mut fcx.source_cache);
@@ -192,6 +192,10 @@ impl<'a, B: Brush, T: TextSource> RangedBuilder<'a, B, T> {
                 layout,
             );
         }
+
+        // Move inline boxes into the layout
+        layout.data.inline_boxes.clear();
+        core::mem::swap(&mut layout.data.inline_boxes, &mut lcx.inline_boxes);
 
         layout.data.finish();
 

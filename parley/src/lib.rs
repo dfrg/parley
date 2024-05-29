@@ -31,4 +31,5 @@ pub use peniko::Font;
 
 pub use context::LayoutContext;
 pub use font::FontContext;
+pub use inline_box::InlineBox;
 pub use layout::Layout;

@@ -156,10 +156,14 @@ impl<'a, B: Brush> BreakLines<'a, B> {
             };
         }
 
+        dbg!(&self.layout.items);
+
         // Iterate over remaining runs in the Layout
         let item_count = self.layout.items.len();
         while self.state.item_idx < item_count {
             let item = &self.layout.items[self.state.item_idx];
+
+            println!("item = {} {:?}", self.state.item_idx, item.kind);
 
             match item.kind {
                 LayoutItemKind::InlineBox => {
@@ -731,7 +735,7 @@ fn commit_line<B: Brush>(
 
     // Iterate over the items to commit
     for (i, item) in items_to_commit.iter().enumerate() {
-        // println!("i = {} index = {} {:?}", i, item.index, item.kind);
+        println!("i = {} index = {} {:?}", i, item.index, item.kind);
 
         match item.kind {
             LayoutItemKind::InlineBox => {
