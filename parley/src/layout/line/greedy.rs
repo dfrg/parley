@@ -28,7 +28,6 @@ impl LineLayout {
 struct LineState {
     x: f32,
     items: Range<usize>,
-    runs: Range<usize>,
     clusters: Range<usize>,
     skip_mandatory_break: bool,
     num_spaces: usize,
@@ -64,7 +63,6 @@ impl BreakerState {
     /// Add the cluster(s) currently being evaluated to the current line
     fn append_cluster_to_line(&mut self, next_x: f32) {
         self.line.items.end = self.run_idx + 1;
-        self.line.runs.end = self.run_idx + 1;
         self.line.clusters.end = self.cluster_idx + 1;
         self.line.x = next_x;
         // Would like to add:
@@ -230,7 +228,6 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                             Boundary::Mandatory => {
                                 if !self.state.line.skip_mandatory_break {
                                     self.state.prev_boundary = None;
-                                    self.state.line.runs.end = self.state.run_idx + 1;
                                     self.state.line.items.end = self.state.item_idx + 1;
                                     self.state.line.clusters.end = self.state.cluster_idx;
 
@@ -337,9 +334,6 @@ impl<'a, B: Brush> BreakLines<'a, B> {
             }
         }
 
-        if self.state.line.runs.end == 0 {
-            self.state.line.runs.end = 1;
-        }
         if self.state.line.items.end == 0 {
             self.state.line.items.end = 1;
         }
@@ -838,7 +832,6 @@ fn commit_line<B: Brush>(
     // Reset state for the new line
     state.clusters.start = state.clusters.end;
     state.clusters.end += 1;
-    state.runs.start = state.runs.end - 1;
     state.items.start = state.items.end - 1;
     state.num_spaces = 0;
 
