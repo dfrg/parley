@@ -8,7 +8,7 @@ use image::codecs::png::PngEncoder;
 use image::{self, Pixel, Rgba, RgbaImage};
 use parley::layout::{Alignment, Glyph, GlyphRun, Layout};
 use parley::style::{FontStack, FontWeight, StyleProperty};
-use parley::{FontContext, LayoutContext};
+use parley::{FontContext, InlineBox, LayoutContext};
 use peniko::Color;
 use std::fs::File;
 use swash::scale::image::Content;
@@ -62,6 +62,13 @@ fn main() {
     let bold = FontWeight::new(600.0);
     let bold_style = StyleProperty::FontWeight(bold);
     builder.push(&bold_style, 0..4);
+
+    builder.push_inline_box(InlineBox {
+        id: 0,
+        index: 6,
+        width: 30.0,
+        height: 30.0,
+    });
 
     // Build the builder into a Layout
     let mut layout: Layout<Color> = builder.build();
