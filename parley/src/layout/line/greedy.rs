@@ -538,6 +538,8 @@ impl<'a, B: Brush> BreakLines<'a, B> {
 
 impl<'a, B: Brush> Drop for BreakLines<'a, B> {
     fn drop(&mut self) {
+        // Compute the overall width and height of the entire layout
+        // The "width" excludes trailing whitespace. The "full_width" includes it.
         let mut width = 0f32;
         let mut full_width = 0f32;
         let mut height = 0f32;
@@ -546,14 +548,19 @@ impl<'a, B: Brush> Drop for BreakLines<'a, B> {
             full_width = full_width.max(line.metrics.advance);
             height += line.metrics.size();
         }
+
+        // Save the computed widths/height to the layout
         self.layout.width = width;
         self.layout.full_width = full_width;
         self.layout.height = height;
+
+        // Save the computed lines to the layout
         self.lines.swap(self.layout);
     }
 }
 
 /// Removes previous justification applied to clusters.
+/// This is part of resetting state in preparation for re-linebreaking the same layout.
 fn unjustify<B: Brush>(layout: &mut LayoutData<B>) {
     for line in &layout.lines {
         if line.alignment == Alignment::Justified
@@ -753,7 +760,7 @@ fn reorder_line_items(runs: &mut [LineItemData]) {
         }
     }
 
-    // Interate over bidi levels
+    // Iterate over bidi levels
     for level in (lowest_odd_level..=max_level).rev() {
         // Iterate over text runs
         let mut i = 0;
