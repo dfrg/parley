@@ -1,6 +1,8 @@
 // Copyright 2021 the Parley Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use crate::{inline_box, InlineBox};
+
 use super::*;
 
 pub mod greedy;
@@ -71,7 +73,7 @@ impl<'a, B: Brush> Line<'a, B> {
     }
 
     /// Returns an iterator over the glyph runs for the line.
-    pub fn glyph_runs(&self) -> impl Iterator<Item = GlyphRun<'a, B>> + 'a + Clone {
+    pub fn items(&self) -> impl Iterator<Item = LayoutItem2<'a, B>> + 'a + Clone {
         GlyphRunIter {
             line: self.clone(),
             item_index: 0,
@@ -105,6 +107,21 @@ impl LineMetrics {
     pub fn size(&self) -> f32 {
         self.ascent + self.descent + self.leading
     }
+}
+
+#[derive(Clone)]
+pub enum LayoutItem2<'a, B: Brush> {
+    GlyphRun(GlyphRun<'a, B>),
+    InlineBox(PositionedInlineBox),
+}
+
+#[derive(Clone)]
+pub struct PositionedInlineBox {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub id: u64,
 }
 
 /// Sequence of fully positioned glyphs with the same style.
@@ -181,49 +198,63 @@ struct GlyphRunIter<'a, B: Brush> {
 }
 
 impl<'a, B: Brush> Iterator for GlyphRunIter<'a, B> {
-    type Item = GlyphRun<'a, B>;
+    type Item = LayoutItem2<'a, B>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let item = self.line.get_item(self.item_index)?;
-            if item.kind == LayoutItemKind::InlineBox {
-                self.item_index += 1;
-                self.glyph_start = 0;
-                self.offset += item.advance;
-                continue;
-            }
+            match item.kind {
+                LayoutItemKind::InlineBox => {
+                    let inline_box = &self.line.layout.inline_boxes[item.index];
 
-            let run = self.line.get_run(self.item_index)?;
-            let mut iter = run
-                .visual_clusters()
-                .flat_map(|c| c.glyphs())
-                .skip(self.glyph_start);
+                    let x = self.offset;
 
-            if let Some(first) = iter.next() {
-                let mut advance = first.advance;
-                let style_index = first.style_index();
-                let mut glyph_count = 1;
-                for glyph in iter.take_while(|g| g.style_index() == style_index) {
-                    glyph_count += 1;
-                    advance += glyph.advance;
+                    self.item_index += 1;
+                    self.glyph_start = 0;
+                    self.offset += item.advance;
+                    return Some(LayoutItem2::InlineBox(PositionedInlineBox {
+                        x,
+                        y: self.line.data.metrics.baseline - inline_box.height,
+                        width: inline_box.width,
+                        height: inline_box.height,
+                        id: inline_box.id,
+                    }));
                 }
-                let style = run.layout.styles.get(style_index)?;
-                let glyph_start = self.glyph_start;
-                self.glyph_start += glyph_count;
-                let offset = self.offset;
-                self.offset += advance;
-                return Some(GlyphRun {
-                    run,
-                    style,
-                    glyph_start,
-                    glyph_count,
-                    offset: offset + self.line.data.metrics.offset,
-                    baseline: self.line.data.metrics.baseline,
-                    advance,
-                });
+
+                LayoutItemKind::TextRun => {
+                    let run = self.line.get_run(self.item_index)?;
+                    let mut iter = run
+                        .visual_clusters()
+                        .flat_map(|c| c.glyphs())
+                        .skip(self.glyph_start);
+
+                    if let Some(first) = iter.next() {
+                        let mut advance = first.advance;
+                        let style_index = first.style_index();
+                        let mut glyph_count = 1;
+                        for glyph in iter.take_while(|g| g.style_index() == style_index) {
+                            glyph_count += 1;
+                            advance += glyph.advance;
+                        }
+                        let style = run.layout.styles.get(style_index)?;
+                        let glyph_start = self.glyph_start;
+                        self.glyph_start += glyph_count;
+                        let offset = self.offset;
+                        self.offset += advance;
+                        return Some(LayoutItem2::GlyphRun(GlyphRun {
+                            run,
+                            style,
+                            glyph_start,
+                            glyph_count,
+                            offset: offset + self.line.data.metrics.offset,
+                            baseline: self.line.data.metrics.baseline,
+                            advance,
+                        }));
+                    }
+                    self.item_index += 1;
+                    self.glyph_start = 0;
+                }
             }
-            self.item_index += 1;
-            self.glyph_start = 0;
         }
     }
 }
