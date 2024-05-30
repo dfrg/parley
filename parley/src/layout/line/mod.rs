@@ -1,8 +1,6 @@
 // Copyright 2021 the Parley Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use crate::{inline_box, InlineBox};
-
 use super::*;
 
 pub mod greedy;
