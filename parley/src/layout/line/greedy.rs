@@ -62,7 +62,7 @@ struct BreakerState {
 impl BreakerState {
     /// Add the cluster(s) currently being evaluated to the current line
     fn append_cluster_to_line(&mut self, next_x: f32) {
-        self.line.items.end = self.run_idx + 1;
+        self.line.items.end = self.item_idx + 1;
         self.line.clusters.end = self.cluster_idx + 1;
         self.line.x = next_x;
         // Would like to add:
@@ -71,7 +71,7 @@ impl BreakerState {
 
     /// Add inline box to line
     fn append_inline_box_to_line(&mut self, next_x: f32) {
-        self.item_idx += 1;
+        // self.item_idx += 1;
         self.line.items.end += 1;
         self.line.x = next_x;
         // Would like to add:
