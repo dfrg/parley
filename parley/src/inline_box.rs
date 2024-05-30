@@ -1,3 +1,6 @@
+// Copyright 2024 the Parley Authors
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 /// A box to be laid out inline with text
 #[derive(Debug, Clone)]
 pub struct InlineBox {
