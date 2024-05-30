@@ -20,7 +20,7 @@ use swash::{GlyphId, NormalizedCoord, Synthesis};
 
 pub use cursor::Cursor;
 pub use line::greedy::BreakLines;
-pub use line::{GlyphRun, LineMetrics, LayoutItem2, PositionedInlineBox};
+pub use line::{GlyphRun, LayoutItem2, LineMetrics, PositionedInlineBox};
 pub use run::RunMetrics;
 
 /// Alignment of a layout.

@@ -71,7 +71,7 @@ fn main() {
     });
     builder.push_inline_box(InlineBox {
         id: 0,
-        index: 40,
+        index: 50,
         width: 50.0,
         height: 30.0,
     });

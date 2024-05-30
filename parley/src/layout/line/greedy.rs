@@ -166,7 +166,10 @@ impl<'a, B: Brush> BreakLines<'a, B> {
         while self.state.item_idx < item_count {
             let item = &self.layout.items[self.state.item_idx];
 
-            println!("\nitem = {} {:?}. x: {}", self.state.item_idx, item.kind, self.state.line.x);
+            println!(
+                "\nitem = {} {:?}. x: {}",
+                self.state.item_idx, item.kind, self.state.line.x
+            );
             dbg!(&self.state.line.items);
 
             match item.kind {
@@ -189,37 +192,20 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                         // We can always line break after an inline box
                         self.state.mark_line_break_opportunity();
                     } else {
-                        // If there we have previously encountered line-breaking opportunity on this line, then take it and
-                        // then reset our item/run/cluster iteration state back to how it was when the line-breaking opportunity was encountered
-                        if let Some(prev) = self.state.prev_boundary.take() {
-                            debug_assert!(prev.state.x != 0.0);
-
-                            println!("BOX BREAK BACK");
-
-                            // Q: Why do we revert the line state here, but only revert the indexes if the commit suceeds?
-                            self.state.line = prev.state;
-                            if try_commit_line!(BreakReason::Regular) {
-                                // Revert boundary state to prev state
-                                self.state.item_idx = prev.item_idx;
-                                self.state.run_idx = prev.run_idx;
-                                self.state.cluster_idx = prev.cluster_idx;
-
-                                return self.start_new_line();
-                            }
-                        }
-                        // Perform an emergency line break
-                        else {
-                            println!("BOX BREAK EMERGENCY");
-
-                            // If we're at the start of the line, this box will never fit, so consume it and accept the overflow.
-                            if self.state.line.x == 0.0 {
-                                self.state.append_inline_box_to_line(next_x);
-                            }
+                        // If we're at the start of the line, this box will never fit, so consume it and accept the overflow.
+                        if self.state.line.x == 0.0 {
+                            println!("BOX EMERGENCY BREAK");
+                            self.state.append_inline_box_to_line(next_x);
                             if try_commit_line!(BreakReason::Regular) {
                                 self.state.item_idx += 1;
                                 return self.start_new_line();
                             }
-                        }
+                        } else {
+                            println!("BOX BREAK");
+                            if try_commit_line!(BreakReason::Regular) {
+                                return self.start_new_line();
+                            }
+                        };
                     }
                 }
                 LayoutItemKind::TextRun => {
@@ -247,7 +233,6 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                         match boundary {
                             // A hard line break (e.g. CRLF or similar)
                             Boundary::Mandatory => {
-
                                 println!("TextRun (Mandatory Break)");
 
                                 if !self.state.line.skip_mandatory_break {
@@ -297,7 +282,6 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                             }
                         }
 
-
                         // Compute the x position of the content being currently processed
                         let next_x = self.state.line.x + advance;
 
@@ -337,7 +321,6 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                                 // Q: Why do we revert the line state here, but only revert the indexes if the commit suceeds?
                                 self.state.line = prev.state;
                                 if try_commit_line!(BreakReason::Regular) {
-
                                     // Revert boundary state to prev state
                                     self.state.item_idx = prev.item_idx;
                                     self.state.run_idx = prev.run_idx;
@@ -395,7 +378,6 @@ impl<'a, B: Brush> BreakLines<'a, B> {
     /// Breaks all remaining lines with the specified maximum advance. This
     /// consumes the line breaker.
     pub fn break_remaining(mut self, max_advance: f32, alignment: Alignment) {
-
         println!("\nDEBUG ITEMS");
         for item in &self.layout.items {
             match item.kind {
@@ -403,7 +385,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                 LayoutItemKind::TextRun => {
                     let run_data = &self.layout.runs[item.index];
                     println!("{:?} ({:?})", item.kind, &run_data.text_range);
-                },
+                }
             }
         }
 
