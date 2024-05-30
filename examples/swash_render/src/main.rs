@@ -93,7 +93,7 @@ fn main() {
         for item in line.items() {
             match item {
                 LayoutItem2::GlyphRun(glyph_run) => {
-                    render_glyph_run(&mut scale_cx, &glyph_run, &mut img, padding)
+                    render_glyph_run(&mut scale_cx, &glyph_run, &mut img, padding);
                 }
                 LayoutItem2::InlineBox(inline_box) => {
                     for x_off in 0..(inline_box.width.floor() as u32) {

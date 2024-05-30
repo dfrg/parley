@@ -194,7 +194,7 @@ impl TinySkiaPen<'_> {
     fn fill_rect(&mut self, width: f32, height: f32) {
         let rect = Rect::from_xywh(self.x, self.y, width, height).unwrap();
         self.pixmap
-            .fill_rect(rect, &self.paint, Transform::identity(), None)
+            .fill_rect(rect, &self.paint, Transform::identity(), None);
     }
 
     fn draw_glyph(

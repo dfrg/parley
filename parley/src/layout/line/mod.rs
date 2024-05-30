@@ -33,7 +33,7 @@ impl<'a, B: Brush> Line<'a, B> {
             return None;
         }
         let item = self.layout.line_items.get(index)?;
-        Some(&item)
+        Some(item)
     }
 
     /// Returns the run at the specified index.
