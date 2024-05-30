@@ -150,9 +150,9 @@ impl LineItemData {
         self.kind == LayoutItemKind::TextRun
     }
 
-    // pub fn is_inline_box(&self) -> bool {
-    //     self.kind == LayoutItemKind::InlineBox
-    // }
+    pub fn is_inline_box(&self) -> bool {
+        self.kind == LayoutItemKind::InlineBox
+    }
 
     pub fn compute_line_height<B: Brush>(&self, layout: &LayoutData<B>) -> f32 {
         match self.kind {
@@ -211,7 +211,7 @@ pub struct LayoutData<B: Brush> {
     pub fonts: Vec<Font>,
     pub coords: Vec<i16>,
 
-    // Input / output of style resolution
+    // Input (/ output of style resolution)
     pub styles: Vec<Style<B>>,
     pub inline_boxes: Vec<InlineBox>,
 

@@ -27,13 +27,13 @@ impl<'a, B: Brush> Line<'a, B> {
     }
 
     /// Returns the run at the specified index.
-    pub fn get_item_kind(&self, index: usize) -> Option<LayoutItemKind> {
+    pub fn get_item(&self, index: usize) -> Option<&LineItemData> {
         let index = self.data.item_range.start + index;
         if index >= self.data.item_range.end {
             return None;
         }
         let item = self.layout.line_items.get(index)?;
-        Some(item.kind)
+        Some(&item)
     }
 
     /// Returns the run at the specified index.
@@ -74,7 +74,7 @@ impl<'a, B: Brush> Line<'a, B> {
     pub fn glyph_runs(&self) -> impl Iterator<Item = GlyphRun<'a, B>> + 'a + Clone {
         GlyphRunIter {
             line: self.clone(),
-            run_index: 0,
+            item_index: 0,
             glyph_start: 0,
             offset: 0.,
         }
@@ -175,7 +175,7 @@ impl<'a, B: Brush> GlyphRun<'a, B> {
 #[derive(Clone)]
 struct GlyphRunIter<'a, B: Brush> {
     line: Line<'a, B>,
-    run_index: usize,
+    item_index: usize,
     glyph_start: usize,
     offset: f32,
 }
@@ -185,14 +185,15 @@ impl<'a, B: Brush> Iterator for GlyphRunIter<'a, B> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let kind = self.line.get_item_kind(self.run_index)?;
-            if kind == LayoutItemKind::InlineBox {
-                self.run_index += 1;
+            let item = self.line.get_item(self.item_index)?;
+            if item.kind == LayoutItemKind::InlineBox {
+                self.item_index += 1;
                 self.glyph_start = 0;
+                self.offset += item.advance;
                 continue;
             }
 
-            let run = self.line.get_run(self.run_index)?;
+            let run = self.line.get_run(self.item_index)?;
             let mut iter = run
                 .visual_clusters()
                 .flat_map(|c| c.glyphs())
@@ -221,7 +222,7 @@ impl<'a, B: Brush> Iterator for GlyphRunIter<'a, B> {
                     advance,
                 });
             }
-            self.run_index += 1;
+            self.item_index += 1;
             self.glyph_start = 0;
         }
     }
