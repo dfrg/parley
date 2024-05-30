@@ -65,9 +65,9 @@ fn main() {
 
     builder.push_inline_box(InlineBox {
         id: 0,
-        index: 6,
-        width: 30.0,
-        height: 30.0,
+        index: 40,
+        width: 50.0,
+        height: 50.0,
     });
 
     // Build the builder into a Layout
