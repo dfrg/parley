@@ -69,6 +69,12 @@ fn main() {
         width: 50.0,
         height: 50.0,
     });
+    builder.push_inline_box(InlineBox {
+        id: 0,
+        index: 40,
+        width: 50.0,
+        height: 30.0,
+    });
 
     // Build the builder into a Layout
     let mut layout: Layout<Color> = builder.build();

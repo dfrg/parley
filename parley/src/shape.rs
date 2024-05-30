@@ -133,7 +133,7 @@ pub fn shape_text<'a, B: Brush>(
     // Iterate over characters in the text
     for ((char_index, ch), (info, style_index)) in text.chars().enumerate().zip(infos) {
         let mut break_run = false;
-        let mut deferred_box: Option<usize> = None;
+        let mut deferred_boxes: Vec<usize> = Vec::new();
         let mut script = info.script();
         if !real_script(script) {
             script = item.script;
@@ -167,7 +167,7 @@ pub fn shape_text<'a, B: Brush>(
 
             if inline_box.index == char_index {
                 break_run = true;
-                deferred_box = Some(box_idx);
+                deferred_boxes.push(box_idx);
                 // Update the current box to the next box
                 current_box = inline_box_iter.next();
             } else {
@@ -187,7 +187,7 @@ pub fn shape_text<'a, B: Brush>(
             char_range.start = char_range.end;
         }
 
-        if let Some(box_idx) = deferred_box.take() {
+        while let Some(box_idx) = deferred_boxes.pop() {
             // Push the box to the list of items
             layout.data.push_inline_box(box_idx);
         }
