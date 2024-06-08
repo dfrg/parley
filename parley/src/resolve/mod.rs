@@ -6,6 +6,9 @@
 pub mod range;
 pub mod tree;
 
+pub use range::RangedStyleBuilder;
+pub use tree::TreeStyleBuilder;
+
 #[cfg(not(feature = "std"))]
 use alloc::{vec, vec::Vec};
 
@@ -14,10 +17,25 @@ use super::style::{
     FontWeight, StyleProperty,
 };
 use crate::font::FontContext;
+use crate::style::TextStyle;
 use crate::util::nearly_eq;
+use core::ops::Range;
 use fontique::FamilyId;
 use swash::text::Language;
 use swash::Setting;
+
+/// Style with an associated range.
+#[derive(Debug, Clone)]
+pub struct RangedStyle<B: Brush> {
+    pub style: ResolvedStyle<B>,
+    pub range: Range<usize>,
+}
+
+#[derive(Clone)]
+struct RangedProperty<B: Brush> {
+    property: ResolvedProperty<B>,
+    range: Range<usize>,
+}
 
 /// Handle for a managed property.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -108,7 +126,7 @@ pub struct ResolveContext {
 }
 
 impl ResolveContext {
-    pub fn resolve<B: Brush>(
+    pub fn resolve_property<B: Brush>(
         &mut self,
         fcx: &mut FontContext,
         property: &StyleProperty<B>,
@@ -138,6 +156,40 @@ impl ResolveContext {
             StyleProperty::LineHeight(value) => LineHeight(*value),
             StyleProperty::WordSpacing(value) => WordSpacing(*value * scale),
             StyleProperty::LetterSpacing(value) => LetterSpacing(*value * scale),
+        }
+    }
+
+    pub fn resolve_entire_style_set<B: Brush>(
+        &mut self,
+        fcx: &mut FontContext,
+        raw_style: &TextStyle<B>,
+        scale: f32,
+    ) -> ResolvedStyle<B> {
+        ResolvedStyle {
+            font_stack: self.resolve_stack(fcx, raw_style.font_stack),
+            font_size: raw_style.font_size * scale,
+            font_stretch: raw_style.font_stretch,
+            font_style: raw_style.font_style,
+            font_weight: raw_style.font_weight,
+            font_variations: self.resolve_variations(raw_style.font_variations),
+            font_features: self.resolve_features(raw_style.font_features),
+            locale: raw_style.locale.map(Language::parse).flatten(),
+            brush: raw_style.brush.clone(),
+            underline: ResolvedDecoration {
+                enabled: raw_style.has_underline,
+                offset: raw_style.underline_offset.map(|x| x * scale),
+                size: raw_style.underline_size.map(|x| x * scale),
+                brush: raw_style.underline_brush.clone(),
+            },
+            strikethrough: ResolvedDecoration {
+                enabled: raw_style.has_strikethrough,
+                offset: raw_style.strikethrough_offset.map(|x| x * scale),
+                size: raw_style.strikethrough_size.map(|x| x * scale),
+                brush: raw_style.strikethrough_brush.clone(),
+            },
+            line_height: raw_style.line_height,
+            word_spacing: raw_style.word_spacing * scale,
+            letter_spacing: raw_style.letter_spacing * scale,
         }
     }
 

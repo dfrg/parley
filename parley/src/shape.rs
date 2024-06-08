@@ -3,8 +3,7 @@
 
 #[cfg(feature = "std")]
 use super::layout::Layout;
-use super::resolve::range::RangedStyle;
-use super::resolve::{ResolveContext, Resolved};
+use super::resolve::{RangedStyle, ResolveContext, Resolved};
 use super::style::{Brush, FontFeature, FontVariation};
 #[cfg(feature = "std")]
 use crate::util::nearly_eq;

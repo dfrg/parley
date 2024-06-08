@@ -6,8 +6,10 @@
 #[cfg(not(feature = "std"))]
 use alloc::{vec, vec::Vec};
 
+use self::tree::TreeStyleBuilder;
+
 use super::bidi;
-use super::resolve::range::*;
+use super::builder::*;
 use super::resolve::*;
 use super::style::*;
 use super::FontContext;
@@ -20,17 +22,22 @@ use swash::text::cluster::CharInfo;
 
 use core::ops::RangeBounds;
 
+use crate::builder::TreeBuilder;
 use crate::inline_box::InlineBox;
 
 /// Context for building a text layout.
 pub struct LayoutContext<B: Brush = [u8; 4]> {
-    bidi: bidi::BidiResolver,
-    rcx: ResolveContext,
-    styles: Vec<RangedStyle<B>>,
-    inline_boxes: Vec<InlineBox>,
-    rsb: RangedStyleBuilder<B>,
-    info: Vec<(CharInfo, u16)>,
-    scx: ShapeContext,
+    pub(crate) bidi: bidi::BidiResolver,
+    pub(crate) rcx: ResolveContext,
+    pub(crate) styles: Vec<RangedStyle<B>>,
+    pub(crate) inline_boxes: Vec<InlineBox>,
+
+    // Reusable style builders (to amortise allocations)
+    pub(crate) ranged_style_builder: RangedStyleBuilder<B>,
+    pub(crate) tree_style_builder: TreeStyleBuilder<B>,
+
+    pub(crate) info: Vec<(CharInfo, u16)>,
+    pub(crate) scx: ShapeContext,
 }
 
 impl<B: Brush> LayoutContext<B> {
@@ -40,10 +47,30 @@ impl<B: Brush> LayoutContext<B> {
             rcx: ResolveContext::default(),
             styles: vec![],
             inline_boxes: vec![],
-            rsb: RangedStyleBuilder::default(),
+            ranged_style_builder: RangedStyleBuilder::default(),
+            tree_style_builder: TreeStyleBuilder::default(),
             info: vec![],
             scx: ShapeContext::default(),
         }
+    }
+
+    fn resolve_style_set(
+        &mut self,
+        font_ctx: &mut FontContext,
+        scale: f32,
+        raw_style: &TextStyle<B>,
+    ) -> ResolvedStyle<B> {
+        self.rcx
+            .resolve_entire_style_set(font_ctx, raw_style, scale)
+    }
+
+    pub fn resolve_style(
+        &mut self,
+        font_ctx: &mut FontContext,
+        scale: f32,
+        raw_property: &StyleProperty<B>,
+    ) -> ResolvedProperty<B> {
+        self.rcx.resolve_property(font_ctx, raw_property, scale)
     }
 
     pub fn ranged_builder<'a>(
@@ -51,24 +78,43 @@ impl<B: Brush> LayoutContext<B> {
         fcx: &'a mut FontContext,
         text: &'a str,
         scale: f32,
-    ) -> RangedBuilder<B, &'a str> {
-        self.begin(text);
+    ) -> RangedBuilder<B> {
+        self.begin();
+        self.analyze_text(text);
+        self.ranged_style_builder.begin(text.len());
+
         #[cfg(feature = "std")]
         fcx.source_cache.prune(128, false);
+
         RangedBuilder {
-            text,
             scale,
             lcx: self,
             fcx,
         }
     }
 
-    fn begin(&mut self, text: &str) {
-        self.rcx.clear();
-        self.styles.clear();
-        self.rsb.begin(text.len());
-        self.info.clear();
-        self.bidi.clear();
+    pub fn tree_builder<'a>(
+        &'a mut self,
+        fcx: &'a mut FontContext,
+        scale: f32,
+        raw_style: &TextStyle<B>,
+    ) -> TreeBuilder<B> {
+        self.begin();
+
+        let resolved_root_style = self.resolve_style_set(fcx, scale, raw_style);
+        self.tree_style_builder.begin(resolved_root_style);
+
+        #[cfg(feature = "std")]
+        fcx.source_cache.prune(128, false);
+
+        TreeBuilder {
+            scale,
+            lcx: self,
+            fcx,
+        }
+    }
+
+    pub(crate) fn analyze_text(&mut self, text: &str) {
         let text = if text.is_empty() { " " } else { text };
         let mut a = swash::text::analyze(text.chars());
         for x in a.by_ref() {
@@ -82,6 +128,13 @@ impl<B: Brush> LayoutContext<B> {
             );
         }
     }
+
+    fn begin(&mut self) {
+        self.rcx.clear();
+        self.styles.clear();
+        self.info.clear();
+        self.bidi.clear();
+    }
 }
 
 impl<B: Brush> Default for LayoutContext<B> {
@@ -94,137 +147,5 @@ impl<B: Brush> Clone for LayoutContext<B> {
     fn clone(&self) -> Self {
         // None of the internal state is visible so just return a new instance.
         Self::new()
-    }
-}
-
-/// Builder for constructing a text layout with ranged attributes.
-pub struct RangedBuilder<'a, B: Brush, T: TextSource> {
-    text: T,
-    scale: f32,
-    lcx: &'a mut LayoutContext<B>,
-    fcx: &'a mut FontContext,
-}
-
-impl<'a, B: Brush, T: TextSource> RangedBuilder<'a, B, T> {
-    pub fn push_default(&mut self, property: &StyleProperty<B>) {
-        let resolved = self.lcx.rcx.resolve(self.fcx, property, self.scale);
-        self.lcx.rsb.push_default(resolved);
-    }
-
-    pub fn push(&mut self, property: &StyleProperty<B>, range: impl RangeBounds<usize>) {
-        let resolved = self.lcx.rcx.resolve(self.fcx, property, self.scale);
-        self.lcx.rsb.push(resolved, range);
-    }
-
-    pub fn push_inline_box(&mut self, inline_box: InlineBox) {
-        self.lcx.inline_boxes.push(inline_box);
-    }
-
-    #[cfg(feature = "std")]
-    pub fn build_into(&mut self, layout: &mut Layout<B>) {
-        layout.data.clear();
-        layout.data.scale = self.scale;
-        let lcx = &mut self.lcx;
-        let mut text = self.text.as_str();
-        let is_empty = text.is_empty();
-        if is_empty {
-            // Force a layout to have at least one line.
-            // TODO: support layouts with no text
-            text = " ";
-        }
-        layout.data.has_bidi = !lcx.bidi.levels().is_empty();
-        layout.data.base_level = lcx.bidi.base_level();
-        layout.data.text_len = text.len();
-        let fcx = &mut self.fcx;
-        lcx.rsb.finish(&mut lcx.styles);
-        let mut char_index = 0;
-        for (i, style) in lcx.styles.iter().enumerate() {
-            for _ in text[style.range.clone()].chars() {
-                lcx.info[char_index].1 = i as u16;
-                char_index += 1;
-            }
-        }
-
-        // Define a function that converts `ResolvedDecoration` into `Decoration` (used just below)
-        fn conv_deco<B: Brush>(
-            deco: &ResolvedDecoration<B>,
-            default_brush: &B,
-        ) -> Option<Decoration<B>> {
-            if deco.enabled {
-                Some(Decoration {
-                    brush: deco.brush.clone().unwrap_or_else(|| default_brush.clone()),
-                    offset: deco.offset,
-                    size: deco.size,
-                })
-            } else {
-                None
-            }
-        }
-
-        // Copy the visual styles into the layout
-        layout.data.styles.extend(lcx.styles.iter().map(|s| {
-            let s = &s.style;
-            Style {
-                brush: s.brush.clone(),
-                underline: conv_deco(&s.underline, &s.brush),
-                strikethrough: conv_deco(&s.strikethrough, &s.brush),
-                line_height: s.line_height,
-            }
-        }));
-
-        // Sort the inline boxes
-        // Note: It's important that this is a stable sort to allow users to control the order of contiguous inline boxes
-        lcx.inline_boxes.sort_by_key(|b| b.index);
-
-        // dbg!(&lcx.inline_boxes);
-
-        {
-            let query = fcx.collection.query(&mut fcx.source_cache);
-            super::shape::shape_text(
-                &lcx.rcx,
-                query,
-                &lcx.styles,
-                &lcx.inline_boxes,
-                &lcx.info,
-                lcx.bidi.levels(),
-                &mut lcx.scx,
-                text,
-                layout,
-            );
-        }
-
-        // Move inline boxes into the layout
-        layout.data.inline_boxes.clear();
-        core::mem::swap(&mut layout.data.inline_boxes, &mut lcx.inline_boxes);
-
-        layout.data.finish();
-
-        // Extra processing if the text is empty
-        // TODO: update this logic to work with inline boxes
-        if is_empty {
-            layout.data.text_len = 0;
-            let run = &mut layout.data.runs[0];
-            run.cluster_range.end = 0;
-            run.text_range.end = 0;
-            layout.data.clusters.clear();
-        }
-    }
-
-    #[cfg(feature = "std")]
-    pub fn build(&mut self) -> Layout<B> {
-        let mut layout = Layout::default();
-        self.build_into(&mut layout);
-        layout
-    }
-}
-
-#[doc(hidden)]
-pub trait TextSource {
-    fn as_str(&self) -> &str;
-}
-
-impl<'a> TextSource for &'a str {
-    fn as_str(&self) -> &str {
-        self
     }
 }
