@@ -7,7 +7,7 @@
 use image::codecs::png::PngEncoder;
 use image::{self, Pixel, Rgba, RgbaImage};
 use parley::layout::{Alignment, Glyph, GlyphRun, Layout, LayoutItem2};
-use parley::style::{FontStack, FontWeight, StyleProperty};
+use parley::style::{FontStack, FontWeight, StyleProperty, TextStyle};
 use parley::{FontContext, InlineBox, LayoutContext};
 use peniko::Color;
 use std::fs::File;
@@ -44,40 +44,88 @@ fn main() {
     let mut layout_cx = LayoutContext::new();
     let mut scale_cx = ScaleContext::new();
 
-    // Create a RangedBuilder
-    let mut builder = layout_cx.ranged_builder(&mut font_cx, &text, display_scale);
-
-    // Set default text colour styles (set foreground text color)
+    // Setup some Parley text styles
     let brush_style = StyleProperty::Brush(text_color);
-    builder.push_default(&brush_style);
-
-    // Set default font family
     let font_stack = FontStack::Source("system-ui");
-    let font_stack_style = StyleProperty::FontStack(font_stack);
-    builder.push_default(&font_stack_style);
-    builder.push_default(&StyleProperty::LineHeight(1.3));
-    builder.push_default(&StyleProperty::FontSize(16.0));
-
-    // Set the first 4 characters to bold
+    let font_stack_style: StyleProperty<Color> = StyleProperty::FontStack(font_stack);
     let bold = FontWeight::new(600.0);
     let bold_style = StyleProperty::FontWeight(bold);
-    builder.push(&bold_style, 0..4);
 
-    builder.push_inline_box(InlineBox {
-        id: 0,
-        index: 40,
-        width: 50.0,
-        height: 50.0,
-    });
-    builder.push_inline_box(InlineBox {
-        id: 0,
-        index: 50,
-        width: 50.0,
-        height: 30.0,
-    });
+    let mut layout = if std::env::args().any(|arg| arg == "--tree") {
+        // TREE BUILDER
+        // ============
 
-    // Build the builder into a Layout
-    let mut layout: Layout<Color> = builder.build();
+        // TODO: cleanup API
+
+        let root_style = TextStyle {
+            brush: text_color,
+            font_stack,
+            line_height: 1.3,
+            font_size: 16.0,
+            ..Default::default()
+        };
+
+        let mut builder = layout_cx.tree_builder(&mut font_cx, display_scale, &root_style);
+
+        builder.push_style_modification_span(&[bold_style]);
+        builder.push_text(4);
+        builder.pop_style_span();
+
+        builder.push_text(text.len() - 4);
+
+        builder.push_inline_box(InlineBox {
+            id: 0,
+            index: 40,
+            width: 50.0,
+            height: 50.0,
+        });
+        builder.push_inline_box(InlineBox {
+            id: 0,
+            index: 50,
+            width: 50.0,
+            height: 30.0,
+        });
+
+        // Build the builder into a Layout
+        // let mut layout: Layout<Color> = builder.build(&text);
+        let layout: Layout<Color> = builder.build(&text);
+        layout
+    } else {
+        // RANGE BUILDER
+        // ============
+
+        // Creatse a RangedBuilder
+        let mut builder = layout_cx.ranged_builder(&mut font_cx, &text, display_scale);
+
+        // Set default text colour styles (set foreground text color)
+        builder.push_default(&brush_style);
+
+        // Set default font family
+        builder.push_default(&font_stack_style);
+        builder.push_default(&StyleProperty::LineHeight(1.3));
+        builder.push_default(&StyleProperty::FontSize(16.0));
+
+        // Set the first 4 characters to bold
+        builder.push(&bold_style, 0..4);
+
+        builder.push_inline_box(InlineBox {
+            id: 0,
+            index: 40,
+            width: 50.0,
+            height: 50.0,
+        });
+        builder.push_inline_box(InlineBox {
+            id: 0,
+            index: 50,
+            width: 50.0,
+            height: 30.0,
+        });
+
+        // Build the builder into a Layout
+        // let mut layout: Layout<Color> = builder.build(&text);
+        let layout: Layout<Color> = builder.build(&text);
+        layout
+    };
 
     // Perform layout (including bidi resolution and shaping) with start alignment
     layout.break_all_lines(max_advance, Alignment::Start);
