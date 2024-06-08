@@ -158,19 +158,19 @@ impl<'a, B: Brush> BreakLines<'a, B> {
 
         // dbg!(&self.layout.items);
 
-        println!("\nBREAK NEXT");
-        dbg!(&self.state.line.items);
+        // println!("\nBREAK NEXT");
+        // dbg!(&self.state.line.items);
 
         // Iterate over remaining runs in the Layout
         let item_count = self.layout.items.len();
         while self.state.item_idx < item_count {
             let item = &self.layout.items[self.state.item_idx];
 
-            println!(
-                "\nitem = {} {:?}. x: {}",
-                self.state.item_idx, item.kind, self.state.line.x
-            );
-            dbg!(&self.state.line.items);
+            // println!(
+            //     "\nitem = {} {:?}. x: {}",
+            //     self.state.item_idx, item.kind, self.state.line.x
+            // );
+            // dbg!(&self.state.line.items);
 
             match item.kind {
                 LayoutItemKind::InlineBox => {
@@ -179,12 +179,12 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                     // Compute the x position of the content being currently processed
                     let next_x = self.state.line.x + inline_box.width;
 
-                    println!("BOX next_x: {}", next_x);
+                    // println!("BOX next_x: {}", next_x);
 
                     // If the box fits on the current line (or we are at the start of the current line)
                     // then simply move on to the next item
                     if next_x <= max_advance {
-                        println!("BOX FITS");
+                        // println!("BOX FITS");
 
                         self.state.item_idx += 1;
                         self.state.append_inline_box_to_line(next_x);
@@ -194,14 +194,14 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                     } else {
                         // If we're at the start of the line, this box will never fit, so consume it and accept the overflow.
                         if self.state.line.x == 0.0 {
-                            println!("BOX EMERGENCY BREAK");
+                            // println!("BOX EMERGENCY BREAK");
                             self.state.append_inline_box_to_line(next_x);
                             if try_commit_line!(BreakReason::Regular) {
                                 self.state.item_idx += 1;
                                 return self.start_new_line();
                             }
                         } else {
-                            println!("BOX BREAK");
+                            // println!("BOX BREAK");
                             if try_commit_line!(BreakReason::Regular) {
                                 return self.start_new_line();
                             }
@@ -216,7 +216,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                     let cluster_start = run_data.cluster_range.start;
                     let cluster_end = run_data.cluster_range.end;
 
-                    println!("TextRun ({:?})", &run_data.text_range);
+                    // println!("TextRun ({:?})", &run_data.text_range);
 
                     // Iterate over remaining clusters in the Run
                     while self.state.cluster_idx < cluster_end {
@@ -233,7 +233,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                         match boundary {
                             // A hard line break (e.g. CRLF or similar)
                             Boundary::Mandatory => {
-                                println!("TextRun (Mandatory Break)");
+                                // println!("TextRun (Mandatory Break)");
 
                                 if !self.state.line.skip_mandatory_break {
                                     self.state.prev_boundary = None;
@@ -285,11 +285,11 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                         // Compute the x position of the content being currently processed
                         let next_x = self.state.line.x + advance;
 
-                        println!("Cluster {} next_x: {}", self.state.cluster_idx, next_x);
+                        // println!("Cluster {} next_x: {}", self.state.cluster_idx, next_x);
 
-                        if break_opportunity {
-                            println!("===");
-                        }
+                        // if break_opportunity {
+                        //     println!("===");
+                        // }
 
                         // If that x position does NOT exceed max_advance then we simply add the cluster(s) to the current line
                         if next_x <= max_advance {
@@ -315,7 +315,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                             // We "take" the line-breaking opportunity by starting a new line and resetting our
                             // item/run/cluster iteration state back to how it was when the line-breaking opportunity was encountered
                             else if let Some(prev) = self.state.prev_boundary.take() {
-                                println!("REVERT");
+                                // println!("REVERT");
                                 debug_assert!(prev.state.x != 0.0);
 
                                 // Q: Why do we revert the line state here, but only revert the indexes if the commit suceeds?
@@ -378,18 +378,18 @@ impl<'a, B: Brush> BreakLines<'a, B> {
     /// Breaks all remaining lines with the specified maximum advance. This
     /// consumes the line breaker.
     pub fn break_remaining(mut self, max_advance: f32, alignment: Alignment) {
-        println!("\nDEBUG ITEMS");
-        for item in &self.layout.items {
-            match item.kind {
-                LayoutItemKind::InlineBox => println!("{:?}", item.kind),
-                LayoutItemKind::TextRun => {
-                    let run_data = &self.layout.runs[item.index];
-                    println!("{:?} ({:?})", item.kind, &run_data.text_range);
-                }
-            }
-        }
+        // println!("\nDEBUG ITEMS");
+        // for item in &self.layout.items {
+        //     match item.kind {
+        //         LayoutItemKind::InlineBox => println!("{:?}", item.kind),
+        //         LayoutItemKind::TextRun => {
+        //             let run_data = &self.layout.runs[item.index];
+        //             println!("{:?} ({:?})", item.kind, &run_data.text_range);
+        //         }
+        //     }
+        // }
 
-        println!("\nBREAK ALL");
+        // println!("\nBREAK ALL");
 
         while self.break_next(max_advance, alignment).is_some() {}
         self.finish();
@@ -768,9 +768,9 @@ fn commit_line<B: Brush>(
     // let end_run_idx = items_to_commit[last_run_pos].index;
 
     // Iterate over the items to commit
-    println!("\nCOMMIT LINE");
+    // println!("\nCOMMIT LINE");
     for (i, item) in items_to_commit.iter().enumerate() {
-        println!("i = {} index = {} {:?}", i, item.index, item.kind);
+        // println!("i = {} index = {} {:?}", i, item.index, item.kind);
 
         match item.kind {
             LayoutItemKind::InlineBox => {
