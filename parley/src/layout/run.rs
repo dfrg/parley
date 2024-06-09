@@ -131,10 +131,6 @@ impl<'a, B: Brush> Run<'a, B> {
             rev: self.is_rtl(),
         }
     }
-
-    pub(crate) fn data(&self) -> &'a RunData {
-        self.data
-    }
 }
 
 struct Clusters<'a, B: Brush> {
