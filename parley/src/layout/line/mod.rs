@@ -113,7 +113,7 @@ pub enum LayoutItem2<'a, B: Brush> {
     InlineBox(PositionedInlineBox),
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PositionedInlineBox {
     pub x: f32,
     pub y: f32,

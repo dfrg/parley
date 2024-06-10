@@ -12,7 +12,7 @@ pub(crate) mod data;
 pub mod cursor;
 
 use super::style::Brush;
-use crate::Font;
+use crate::{Font, InlineBox};
 use core::ops::Range;
 use data::*;
 use swash::text::cluster::{Boundary, ClusterInfo};
@@ -93,6 +93,14 @@ impl<B: Brush> Layout<B> {
             layout: &self.data,
             data: self.data.lines.get(index)?,
         })
+    }
+
+    pub fn inline_boxes(&self) -> &[InlineBox] {
+        &self.data.inline_boxes
+    }
+
+    pub fn inline_boxes_mut(&mut self) -> &mut [InlineBox] {
+        &mut self.data.inline_boxes
     }
 
     /// Returns an iterator over the lines in the layout.
