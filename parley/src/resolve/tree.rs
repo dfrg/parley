@@ -146,8 +146,13 @@ impl<B: Brush> TreeStyleBuilder<B> {
 
     /// Pushes a property that covers the specified range of text.
     pub fn push_text(&mut self, len: usize) {
+
+        if len == 0 {
+            return;
+        }
+
         let start = self.total_text_len;
-        let end = self.total_text_len + len;
+        let end = self.total_text_len + len - 1;
 
         self.tree
             .push(StyleTreeNode::text(self.current_span, Range { start, end }));
