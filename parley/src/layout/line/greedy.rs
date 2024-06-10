@@ -745,8 +745,9 @@ fn commit_line<B: Brush>(
 ) -> bool {
     let is_empty = layout.text_len == 0;
 
-    // Ensure that the cluster endpoint is within range
+    // Ensure that the cluster and item endpoints are within range
     state.clusters.end = state.clusters.end.min(layout.clusters.len());
+    state.items.end = state.items.end.min(layout.items.len());
 
     let start_item_idx = lines.line_items.len();
     // let start_run_idx = lines.line_items.last().map(|item| item.index).unwrap_or(0);
