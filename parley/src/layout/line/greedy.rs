@@ -337,10 +337,30 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                                 if self.state.line.x == 0. {
                                     self.state.append_cluster_to_line(next_x);
                                     self.state.cluster_idx += 1;
+                                    if is_space {
+                                        self.state.line.num_spaces += 1;
+                                    }
+
+                                    if try_commit_line!(BreakReason::Emergency) {
+                                        self.state.cluster_idx += 1;
+                                        return self.start_new_line();
+                                    }
                                 }
-                                if try_commit_line!(BreakReason::Emergency) {
-                                    self.state.cluster_idx += 1;
-                                    return self.start_new_line();
+                                else {
+                                    const BREAK_WORDS_IN_EMERGENCY : bool = false;
+
+                                    if BREAK_WORDS_IN_EMERGENCY {
+                                        if try_commit_line!(BreakReason::Emergency) {
+                                            self.state.cluster_idx += 1;
+                                            return self.start_new_line();
+                                        }
+                                    } else {
+                                        self.state.append_cluster_to_line(next_x);
+                                        self.state.cluster_idx += 1;
+                                        if is_space {
+                                            self.state.line.num_spaces += 1;
+                                        }
+                                    }
                                 }
                             }
                         }
