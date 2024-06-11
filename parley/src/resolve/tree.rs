@@ -65,6 +65,17 @@ pub struct TreeStyleBuilder<B: Brush> {
     text_last_pushed_at: usize,
 }
 
+impl<B: Brush> TreeStyleBuilder<B> {
+    fn current_style(&self) -> ResolvedStyle<B> {
+        self.tree[self.current_span]
+            .data
+            .as_span()
+            .unwrap()
+            .style
+            .clone()
+    }
+}
+
 impl<B: Brush> Default for TreeStyleBuilder<B> {
     fn default() -> Self {
         Self {
@@ -91,9 +102,9 @@ impl<B: Brush> TreeStyleBuilder<B> {
 
     pub fn push_style_span(&mut self, style: ResolvedStyle<B>) {
         if self.total_text_len > self.text_last_pushed_at {
-            let range = self.text_last_pushed_at..(self.total_text_len + 1);
-            let style = style.clone();
-            self.flatted_styles.push(dbg!(RangedStyle { style, range }));
+            let range = self.text_last_pushed_at..(self.total_text_len);
+            let style = self.current_style();
+            self.flatted_styles.push(RangedStyle { style, range });
             self.text_last_pushed_at = self.total_text_len;
         }
 
@@ -106,35 +117,27 @@ impl<B: Brush> TreeStyleBuilder<B> {
         &mut self,
         properties: impl Iterator<Item = ResolvedProperty<B>>,
     ) {
-        let mut style = self.tree[self.current_span]
-            .data
-            .as_span()
-            .unwrap()
-            .style
-            .clone();
+        let mut new_style = self.current_style();
         for prop in properties {
-            style.apply(prop.clone());
+            new_style.apply(prop.clone());
         }
 
         if self.total_text_len > self.text_last_pushed_at {
-            let range = self.text_last_pushed_at..(self.total_text_len + 1);
-            let style = style.clone();
-            self.flatted_styles.push(dbg!(RangedStyle { style, range }));
+            let range = self.text_last_pushed_at..(self.total_text_len);
+            let style = self.current_style();
+            self.flatted_styles.push(RangedStyle { style, range });
             self.text_last_pushed_at = self.total_text_len;
         }
 
         self.tree
-            .push(StyleTreeNode::span(Some(self.current_span), style));
+            .push(StyleTreeNode::span(Some(self.current_span), new_style));
         self.current_span = self.tree.len() - 1;
     }
 
     pub fn pop_style_span(&mut self) {
         if self.total_text_len > self.text_last_pushed_at {
             let range = self.text_last_pushed_at..(self.total_text_len);
-            let style = match &self.tree[self.current_span].data {
-                StyleTreeNodeData::Span(span) => span.style.clone(),
-                _ => unreachable!(),
-            };
+            let style = self.current_style();
             self.flatted_styles.push(RangedStyle { style, range });
             self.text_last_pushed_at = self.total_text_len;
         }
@@ -146,13 +149,12 @@ impl<B: Brush> TreeStyleBuilder<B> {
 
     /// Pushes a property that covers the specified range of text.
     pub fn push_text(&mut self, len: usize) {
-
         if len == 0 {
             return;
         }
 
         let start = self.total_text_len;
-        let end = self.total_text_len + len - 1;
+        let end = self.total_text_len + len;
 
         self.tree
             .push(StyleTreeNode::text(self.current_span, Range { start, end }));
@@ -173,10 +175,7 @@ impl<B: Brush> TreeStyleBuilder<B> {
 
         if self.total_text_len > self.text_last_pushed_at {
             let range = self.text_last_pushed_at..(self.total_text_len);
-            let style = match &self.tree[self.current_span].data {
-                StyleTreeNodeData::Span(span) => span.style.clone(),
-                _ => unreachable!(),
-            };
+            let style = self.current_style();
             self.flatted_styles.push(RangedStyle { style, range });
             self.text_last_pushed_at = self.total_text_len;
         }
