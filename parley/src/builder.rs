@@ -145,14 +145,14 @@ fn build_into_layout<B: Brush>(
     layout.data.base_level = lcx.bidi.base_level();
     layout.data.text_len = text.len();
 
-    println!("BUILD INTO ({})", text.len());
-    for span in &lcx.styles {
-        let stack = lcx.rcx.stack(span.style.font_stack);
-        println!(
-            "{:?} weight:{}, family: {:?}",
-            span.range, span.style.font_weight, stack
-        );
-    }
+    // println!("BUILD INTO ({})", text.len());
+    // for span in &lcx.styles {
+    //     let stack = lcx.rcx.stack(span.style.font_stack);
+    //     println!(
+    //         "{:?} weight:{}, family: {:?}",
+    //         span.range, span.style.font_weight, stack
+    //     );
+    // }
 
     let mut char_index = 0;
     for (i, style) in lcx.styles.iter().enumerate() {

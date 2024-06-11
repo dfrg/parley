@@ -180,12 +180,12 @@ impl<B: Brush> TreeStyleBuilder<B> {
             self.text_last_pushed_at = self.total_text_len;
         }
 
-        println!("FINISH TREE");
-        dbg!(self.total_text_len);
+        // println!("FINISH TREE");
+        // dbg!(self.total_text_len);
         // dbg!(&self.tree);
-        for span in &self.flatted_styles {
-            println!("{:?} weight:{}", span.range, span.style.font_weight);
-        }
+        // for span in &self.flatted_styles {
+        //     println!("{:?} weight:{}", span.range, span.style.font_weight);
+        // }
         // dbg!(&self.flatted_styles);
 
         styles.clear();
