@@ -12,6 +12,12 @@ pub use font::{
     FontWeight, GenericFamily,
 };
 
+#[derive(Debug, Clone, Copy)]
+pub enum WhiteSpaceCollapse {
+    Collapse,
+    Preserve,
+}
+
 /// Properties that define a style.
 #[derive(Clone, PartialEq, Debug)]
 pub enum StyleProperty<'a, B: Brush> {

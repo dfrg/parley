@@ -5,7 +5,6 @@
 
 #[cfg(not(feature = "std"))]
 use alloc::{vec, vec::Vec};
-use fontique::FamilyId;
 
 use super::context::*;
 use super::resolve::*;
@@ -98,32 +97,41 @@ impl<'a, B: Brush> TreeBuilder<'a, B> {
         self.lcx.tree_style_builder.pop_style_span();
     }
 
-    pub fn push_text(&mut self, len: usize) {
-        self.lcx.tree_style_builder.push_text(len);
+    pub fn push_text(&mut self, text: &str) {
+        self.lcx.tree_style_builder.push_text(text);
     }
 
-    pub fn push_inline_box(&mut self, inline_box: InlineBox) {
+    pub fn push_inline_box(&mut self, mut inline_box: InlineBox) {
+        self.lcx.tree_style_builder.push_uncomitted_text(false);
+        // TODO: arrange type better here to factor out the index
+        inline_box.index = self.lcx.tree_style_builder.current_text_len();
         self.lcx.inline_boxes.push(inline_box);
     }
 
-    #[cfg(feature = "std")]
-    pub fn build_into(&mut self, layout: &mut Layout<B>, text: impl AsRef<str>) {
-        let text = text.as_ref();
-
-        // Apply TreeStyleBuilder styles to LayoutContext
-        self.lcx.tree_style_builder.finish(&mut self.lcx.styles);
-
-        self.lcx.analyze_text(text);
-
-        // Call generic layout builder method
-        build_into_layout(layout, self.scale, text, self.lcx, self.fcx)
+    pub fn set_white_space_mode(&mut self, white_space_collapse: WhiteSpaceCollapse) {
+        self.lcx
+            .tree_style_builder
+            .set_white_space_mode(white_space_collapse);
     }
 
     #[cfg(feature = "std")]
-    pub fn build(&mut self, text: impl AsRef<str>) -> Layout<B> {
+    pub fn build_into(&mut self, layout: &mut Layout<B>) -> String {
+        // Apply TreeStyleBuilder styles to LayoutContext
+        let text = self.lcx.tree_style_builder.finish(&mut self.lcx.styles);
+
+        self.lcx.analyze_text(&text);
+
+        // Call generic layout builder method
+        build_into_layout(layout, self.scale, &text, self.lcx, self.fcx);
+
+        text
+    }
+
+    #[cfg(feature = "std")]
+    pub fn build(&mut self) -> (Layout<B>, String) {
         let mut layout = Layout::default();
-        self.build_into(&mut layout, text);
-        layout
+        let text = self.build_into(&mut layout);
+        (layout, text)
     }
 }
 

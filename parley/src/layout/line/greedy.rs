@@ -345,9 +345,8 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                                         self.state.cluster_idx += 1;
                                         return self.start_new_line();
                                     }
-                                }
-                                else {
-                                    const BREAK_WORDS_IN_EMERGENCY : bool = false;
+                                } else {
+                                    const BREAK_WORDS_IN_EMERGENCY: bool = false;
 
                                     if BREAK_WORDS_IN_EMERGENCY {
                                         if try_commit_line!(BreakReason::Emergency) {
