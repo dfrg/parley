@@ -649,13 +649,13 @@ impl<'a, B: Brush> Drop for BreakLines<'a, B> {
         self.layout.full_width = full_width;
         self.layout.height = height;
 
-        for (i, line) in self.lines.lines.iter().enumerate() {
-            println!("LINE {i}");
-            for item_idx in line.item_range.clone() {
-                let item = &self.lines.line_items[item_idx];
-                println!("  ITEM {:?} ({})", item.kind, item.advance);
-            }
-        }
+        // for (i, line) in self.lines.lines.iter().enumerate() {
+        //     println!("LINE {i}");
+        //     for item_idx in line.item_range.clone() {
+        //         let item = &self.lines.line_items[item_idx];
+        //         println!("  ITEM {:?} ({})", item.kind, item.advance);
+        //     }
+        // }
 
         // Save the computed lines to the layout
         self.lines.swap(self.layout);
