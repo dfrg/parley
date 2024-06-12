@@ -77,6 +77,13 @@ impl GenericFamily {
             "emoji" => Self::Emoji,
             "math" => Self::Math,
             "fangsong" => Self::FangSong,
+
+            // Legacy web compatibility
+            #[cfg(target_vendor = "apple")]
+            "-apple-system" => Self::SystemUi,
+            #[cfg(target_os = "macos")]
+            "BlinkMacSystemFont" => Self::SystemUi,
+
             _ => return None,
         })
     }
