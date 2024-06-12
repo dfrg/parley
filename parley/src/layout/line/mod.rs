@@ -205,7 +205,7 @@ impl<'a, B: Brush> Iterator for GlyphRunIter<'a, B> {
                 LayoutItemKind::InlineBox => {
                     let inline_box = &self.line.layout.inline_boxes[item.index];
 
-                    let x = self.offset;
+                    let x = self.offset + self.line.data.metrics.offset;
 
                     self.item_index += 1;
                     self.glyph_start = 0;
