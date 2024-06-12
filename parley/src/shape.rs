@@ -48,6 +48,11 @@ pub fn shape_text<'a, B: Brush>(
 ) {
     // Do nothing if there is no text or styles (there should always be a default style)
     if text.is_empty() || styles.is_empty() {
+        // Process any remaining inline boxes whose index is greater than the length of the text
+        for box_idx in 0..inline_boxes.len() {
+            // Push the box to the list of items
+            layout.data.push_inline_box(box_idx);
+        }
         return;
     }
 

@@ -529,16 +529,18 @@ impl<'a, B: Brush> BreakLines<'a, B> {
             // Compute size of line's trailing whitespace
             line.metrics.trailing_whitespace = 0.0;
             if !line.item_range.is_empty() {
+                // Note: there may not be a "last run" if there are no runs in the line
                 let last_run = &self
                     .lines
                     .line_items
                     .iter()
-                    .rfind(|item| item.is_text_run())
-                    .unwrap();
-                if !last_run.cluster_range.is_empty() {
-                    let cluster = &self.layout.clusters[last_run.cluster_range.end - 1];
-                    if cluster.info.whitespace().is_space_or_nbsp() {
-                        line.metrics.trailing_whitespace = cluster.advance;
+                    .rfind(|item| item.is_text_run());
+                if let Some(last_run) = last_run {
+                    if !last_run.cluster_range.is_empty() {
+                        let cluster = &self.layout.clusters[last_run.cluster_range.end - 1];
+                        if cluster.info.whitespace().is_space_or_nbsp() {
+                            line.metrics.trailing_whitespace = cluster.advance;
+                        }
                     }
                 }
             }
