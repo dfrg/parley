@@ -68,17 +68,20 @@ fn main() {
         let mut builder = layout_cx.tree_builder(&mut font_cx, display_scale, &root_style);
 
         builder.push_style_modification_span(&[bold_style]);
-        builder.push_text(4);
+        builder.push_text(&text[0..5]);
         builder.pop_style_span();
 
-        builder.push_text(text.len() - 4);
+        builder.push_text(&text[5..40]);
 
         builder.push_inline_box(InlineBox {
             id: 0,
-            index: 40,
+            index: 0,
             width: 50.0,
             height: 50.0,
         });
+
+        builder.push_text(&text[40..50]);
+
         builder.push_inline_box(InlineBox {
             id: 0,
             index: 50,
@@ -86,9 +89,11 @@ fn main() {
             height: 30.0,
         });
 
+        builder.push_text(&text[50..]);
+
         // Build the builder into a Layout
         // let mut layout: Layout<Color> = builder.build(&text);
-        let layout: Layout<Color> = builder.build(&text);
+        let (layout, _text): (Layout<Color>, String) = builder.build();
         layout
     } else {
         // RANGE BUILDER
