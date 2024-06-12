@@ -152,6 +152,8 @@ impl<B: Brush> TreeStyleBuilder<B> {
 
         // Nothing to do if there is no uncommited text
         if span_text.len() == 0 {
+            // This is for the case of an inline box. This possibly ought to be made more explicit.
+            self.is_span_first = false;
             return;
         }
 
