@@ -205,8 +205,10 @@ pub fn shape_text<'a, B: Brush>(
     }
 
     // Process any remaining inline boxes whose index is greater than the length of the text
+    if let Some((box_idx, _inline_box)) = current_box {
+        layout.data.push_inline_box(box_idx);
+    }
     for (box_idx, _inline_box) in inline_box_iter {
-        // Push the box to the list of items
         layout.data.push_inline_box(box_idx);
     }
 }
