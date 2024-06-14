@@ -3,6 +3,7 @@
 
 //! Layout types.
 
+mod alignment;
 mod cluster;
 mod line;
 mod run;
@@ -10,6 +11,8 @@ mod run;
 pub(crate) mod data;
 
 pub mod cursor;
+
+use self::alignment::align;
 
 use super::style::Brush;
 use crate::{Font, InlineBox};
@@ -116,10 +119,16 @@ impl<B: Brush> Layout<B> {
         BreakLines::new(&mut self.data)
     }
 
-    /// Breaks all lines with the specified maximum advance and alignment.
-    pub fn break_all_lines(&mut self, max_advance: Option<f32>, alignment: Alignment) {
+    /// Breaks all lines with the specified maximum advance
+    pub fn break_all_lines(&mut self, max_advance: Option<f32>) {
         self.break_lines()
-            .break_remaining(max_advance.unwrap_or(f32::MAX), alignment);
+            .break_remaining(max_advance.unwrap_or(f32::MAX));
+    }
+
+    // Apply to alignment to layout relative to the specified container width. If container_width is not
+    // specified then the max line length is used.
+    pub fn align(&mut self, container_width: Option<f32>, alignment: Alignment) {
+        align(&mut self.data, container_width, alignment)
     }
 
     /// Returns an iterator over the runs in the layout.

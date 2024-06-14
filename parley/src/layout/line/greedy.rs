@@ -6,6 +6,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+use crate::layout::alignment::{align, unjustify};
 use crate::layout::*;
 use crate::style::Brush;
 
@@ -133,7 +134,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
 
     /// Computes the next line in the paragraph. Returns the advance and size
     /// (width and height for horizontal layouts) of the line.
-    pub fn break_next(&mut self, max_advance: f32, alignment: Alignment) -> Option<(f32, f32)> {
+    pub fn break_next(&mut self, max_advance: f32) -> Option<(f32, f32)> {
         // Maintain iterator state
         if self.done {
             return None;
@@ -150,7 +151,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                     &mut self.lines,
                     &mut self.state.line,
                     max_advance,
-                    alignment,
+                    Alignment::Start,
                     $break_reason,
                 )
             };
@@ -316,7 +317,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                             // item/run/cluster iteration state back to how it was when the line-breaking opportunity was encountered
                             else if let Some(prev) = self.state.prev_boundary.take() {
                                 // println!("REVERT");
-                                debug_assert!(prev.state.x != 0.0);
+                                // debug_assert!(prev.state.x != 0.0);
 
                                 // Q: Why do we revert the line state here, but only revert the indexes if the commit suceeds?
                                 self.state.line = prev.state;
@@ -396,7 +397,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
 
     /// Breaks all remaining lines with the specified maximum advance. This
     /// consumes the line breaker.
-    pub fn break_remaining(mut self, max_advance: f32, alignment: Alignment) {
+    pub fn break_remaining(mut self, max_advance: f32) {
         // println!("\nDEBUG ITEMS");
         // for item in &self.layout.items {
         //     match item.kind {
@@ -410,7 +411,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
 
         // println!("\nBREAK ALL");
 
-        while self.break_next(max_advance, alignment).is_some() {}
+        while self.break_next(max_advance).is_some() {}
         self.finish();
     }
 
@@ -545,66 +546,6 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                 }
             }
 
-            // Apply alignment to line items
-            let has_finite_width = line.max_advance.is_finite() && line.max_advance < f32::MAX;
-            if has_finite_width {
-                // Compute free space. Alignment only applies if free_space > 0
-                let free_space =
-                    line.max_advance - line.metrics.advance + line.metrics.trailing_whitespace;
-
-                if free_space > 0. {
-                    match line.alignment {
-                        Alignment::Start => {
-                            // Do nothing
-                        }
-                        Alignment::End => {
-                            line.metrics.offset = free_space;
-                        }
-                        Alignment::Middle => {
-                            line.metrics.offset = free_space * 0.5;
-                        }
-                        Alignment::Justified => {
-                            if line.break_reason != BreakReason::None && line.num_spaces != 0 {
-                                let adjustment = free_space / line.num_spaces as f32;
-                                let mut applied = 0;
-                                for line_item in self.lines.line_items[line.item_range.clone()]
-                                    .iter()
-                                    .filter(|item| item.is_text_run())
-                                {
-                                    // Iterate over clusters in the run
-                                    //   - Iterate forwards for even bidi levels (which represent RTL runs)
-                                    //   - Iterate backwards for odd bidi levels (which represent RTL runs)
-                                    let clusters =
-                                        &mut self.layout.clusters[line_item.cluster_range.clone()];
-                                    let bidi_level_is_odd = line_item.bidi_level & 1 != 0;
-                                    if bidi_level_is_odd {
-                                        for cluster in clusters.iter_mut().rev() {
-                                            if applied == line.num_spaces {
-                                                break;
-                                            }
-                                            if cluster.info.whitespace().is_space_or_nbsp() {
-                                                cluster.advance += adjustment;
-                                                applied += 1;
-                                            }
-                                        }
-                                    } else {
-                                        for cluster in clusters.iter_mut() {
-                                            if applied == line.num_spaces {
-                                                break;
-                                            }
-                                            if cluster.info.whitespace().is_space_or_nbsp() {
-                                                cluster.advance += adjustment;
-                                                applied += 1;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
             if !have_metrics {
                 // Line consisting entirely of whitespace?
                 if !line.item_range.is_empty() {
@@ -660,52 +601,6 @@ impl<'a, B: Brush> Drop for BreakLines<'a, B> {
 
         // Save the computed lines to the layout
         self.lines.swap(self.layout);
-    }
-}
-
-/// Removes previous justification applied to clusters.
-/// This is part of resetting state in preparation for re-linebreaking the same layout.
-fn unjustify<B: Brush>(layout: &mut LayoutData<B>) {
-    for line in &layout.lines {
-        if line.alignment == Alignment::Justified
-            && line.max_advance.is_finite()
-            && line.max_advance < f32::MAX
-        {
-            let extra = line.max_advance - line.metrics.advance + line.metrics.trailing_whitespace;
-            if line.break_reason != BreakReason::None && line.num_spaces != 0 {
-                let adjustment = extra / line.num_spaces as f32;
-                let mut applied = 0;
-                for line_run in layout.line_items[line.item_range.clone()]
-                    .iter()
-                    .filter(|item| item.is_text_run())
-                {
-                    if line_run.bidi_level & 1 != 0 {
-                        for cluster in layout.clusters[line_run.cluster_range.clone()]
-                            .iter_mut()
-                            .rev()
-                        {
-                            if applied == line.num_spaces {
-                                break;
-                            }
-                            if cluster.info.whitespace().is_space_or_nbsp() {
-                                cluster.advance -= adjustment;
-                                applied += 1;
-                            }
-                        }
-                    } else {
-                        for cluster in layout.clusters[line_run.cluster_range.clone()].iter_mut() {
-                            if applied == line.num_spaces {
-                                break;
-                            }
-                            if cluster.info.whitespace().is_space_or_nbsp() {
-                                cluster.advance -= adjustment;
-                                applied += 1;
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
