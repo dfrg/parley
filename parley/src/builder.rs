@@ -142,11 +142,6 @@ fn build_into_layout<B: Brush>(
     lcx: &mut LayoutContext<B>,
     fcx: &mut FontContext,
 ) {
-    // Force a layout to have at least one line.
-    // TODO: support layouts with no text
-    let is_empty = text.is_empty();
-    let text = if is_empty { " " } else { text };
-
     layout.data.clear();
     layout.data.scale = scale;
     layout.data.has_bidi = !lcx.bidi.levels().is_empty();
@@ -223,15 +218,4 @@ fn build_into_layout<B: Brush>(
     core::mem::swap(&mut layout.data.inline_boxes, &mut lcx.inline_boxes);
 
     layout.data.finish();
-
-    // Extra processing if the text is empty
-    // TODO: update this logic to work with inline boxes
-    if is_empty {
-        layout.data.text_len = 0;
-        if let Some(run) = layout.data.runs.get_mut(0) {
-            run.cluster_range.end = 0;
-            run.text_range.end = 0;
-        }
-        layout.data.clusters.clear();
-    }
 }
