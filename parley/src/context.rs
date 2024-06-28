@@ -13,18 +13,21 @@ use super::style::*;
 use super::FontContext;
 
 #[cfg(feature = "std")]
-use super::layout::Layout;
+use super::layout::{Decoration, Layout, Style};
 
 use swash::shape::ShapeContext;
 use swash::text::cluster::CharInfo;
 
 use core::ops::RangeBounds;
 
+use crate::inline_box::InlineBox;
+
 /// Context for building a text layout.
 pub struct LayoutContext<B: Brush = [u8; 4]> {
     bidi: bidi::BidiResolver,
     rcx: ResolveContext,
     styles: Vec<RangedStyle<B>>,
+    inline_boxes: Vec<InlineBox>,
     rsb: RangedStyleBuilder<B>,
     info: Vec<(CharInfo, u16)>,
     scx: ShapeContext,
@@ -36,6 +39,7 @@ impl<B: Brush> LayoutContext<B> {
             bidi: bidi::BidiResolver::new(),
             rcx: ResolveContext::default(),
             styles: vec![],
+            inline_boxes: vec![],
             rsb: RangedStyleBuilder::default(),
             info: vec![],
             scx: ShapeContext::default(),
@@ -112,6 +116,10 @@ impl<'a, B: Brush, T: TextSource> RangedBuilder<'a, B, T> {
         self.lcx.rsb.push(resolved, range);
     }
 
+    pub fn push_inline_box(&mut self, inline_box: InlineBox) {
+        self.lcx.inline_boxes.push(inline_box);
+    }
+
     #[cfg(feature = "std")]
     pub fn build_into(&mut self, layout: &mut Layout<B>) {
         layout.data.clear();
@@ -121,6 +129,7 @@ impl<'a, B: Brush, T: TextSource> RangedBuilder<'a, B, T> {
         let is_empty = text.is_empty();
         if is_empty {
             // Force a layout to have at least one line.
+            // TODO: support layouts with no text
             text = " ";
         }
         layout.data.has_bidi = !lcx.bidi.levels().is_empty();
@@ -135,7 +144,8 @@ impl<'a, B: Brush, T: TextSource> RangedBuilder<'a, B, T> {
                 char_index += 1;
             }
         }
-        use super::layout::{Decoration, Style};
+
+        // Define a function that converts `ResolvedDecoration` into `Decoration` (used just below)
         fn conv_deco<B: Brush>(
             deco: &ResolvedDecoration<B>,
             default_brush: &B,
@@ -150,6 +160,8 @@ impl<'a, B: Brush, T: TextSource> RangedBuilder<'a, B, T> {
                 None
             }
         }
+
+        // Copy the visual styles into the layout
         layout.data.styles.extend(lcx.styles.iter().map(|s| {
             let s = &s.style;
             Style {
@@ -159,12 +171,20 @@ impl<'a, B: Brush, T: TextSource> RangedBuilder<'a, B, T> {
                 line_height: s.line_height,
             }
         }));
+
+        // Sort the inline boxes
+        // Note: It's important that this is a stable sort to allow users to control the order of contiguous inline boxes
+        lcx.inline_boxes.sort_by_key(|b| b.index);
+
+        // dbg!(&lcx.inline_boxes);
+
         {
             let query = fcx.collection.query(&mut fcx.source_cache);
             super::shape::shape_text(
                 &lcx.rcx,
                 query,
                 &lcx.styles,
+                &lcx.inline_boxes,
                 &lcx.info,
                 lcx.bidi.levels(),
                 &mut lcx.scx,
@@ -172,7 +192,15 @@ impl<'a, B: Brush, T: TextSource> RangedBuilder<'a, B, T> {
                 layout,
             );
         }
+
+        // Move inline boxes into the layout
+        layout.data.inline_boxes.clear();
+        core::mem::swap(&mut layout.data.inline_boxes, &mut lcx.inline_boxes);
+
         layout.data.finish();
+
+        // Extra processing if the text is empty
+        // TODO: update this logic to work with inline boxes
         if is_empty {
             layout.data.text_len = 0;
             let run = &mut layout.data.runs[0];

@@ -20,7 +20,7 @@ use swash::{GlyphId, NormalizedCoord, Synthesis};
 
 pub use cursor::Cursor;
 pub use line::greedy::BreakLines;
-pub use line::{GlyphRun, LineMetrics};
+pub use line::{GlyphRun, LayoutItem2, LineMetrics, PositionedInlineBox};
 pub use run::RunMetrics;
 
 /// Alignment of a layout.
@@ -137,7 +137,7 @@ impl<B: Brush> Default for Layout<B> {
 pub struct Run<'a, B: Brush> {
     layout: &'a LayoutData<B>,
     data: &'a RunData,
-    line_data: Option<&'a LineRunData>,
+    line_data: Option<&'a LineItemData>,
 }
 
 /// Atomic unit of text.
