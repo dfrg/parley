@@ -7,16 +7,16 @@
 //! Note: Emoji rendering is not currently implemented in this example. See the swash example
 //! if you need emoji rendering.
 
-use parley::layout::{Alignment, GlyphRun, Layout};
+use parley::layout::{Alignment, GlyphRun, Layout, LayoutItem2};
 use parley::style::{FontStack, FontWeight, StyleProperty};
-use parley::{FontContext, LayoutContext};
+use parley::{FontContext, InlineBox, LayoutContext};
 use peniko::Color as PenikoColor;
 use skrifa::instance::{LocationRef, NormalizedCoord, Size};
 use skrifa::outline::{DrawSettings, OutlinePen};
 use skrifa::raw::FontRef as ReadFontsRef;
 use skrifa::{GlyphId, MetadataProvider, OutlineGlyph};
 use tiny_skia::{
-    Color as TinySkiaColor, FillRule, Paint, PathBuilder, Pixmap, PixmapMut, Transform,
+    Color as TinySkiaColor, FillRule, Paint, PathBuilder, Pixmap, PixmapMut, Rect, Transform,
 };
 
 fn main() {
@@ -64,6 +64,13 @@ fn main() {
     let bold_style = StyleProperty::FontWeight(bold);
     builder.push(&bold_style, 0..4);
 
+    builder.push_inline_box(InlineBox {
+        id: 0,
+        index: 40,
+        width: 50.0,
+        height: 50.0,
+    });
+
     // Build the builder into a Layout
     let mut layout: Layout<PenikoColor> = builder.build();
 
@@ -85,8 +92,15 @@ fn main() {
 
     // Render each glyph run
     for line in layout.lines() {
-        for glyph_run in line.glyph_runs() {
-            render_glyph_run(&glyph_run, &mut pen, padding);
+        for item in line.items() {
+            match item {
+                LayoutItem2::GlyphRun(glyph_run) => render_glyph_run(&glyph_run, &mut pen, padding),
+                LayoutItem2::InlineBox(inline_box) => {
+                    pen.set_origin(inline_box.x + padding as f32, inline_box.y + padding as f32);
+                    pen.set_color(to_tiny_skia(foreground_color));
+                    pen.fill_rect(inline_box.width, inline_box.height);
+                }
+            };
         }
     }
 
@@ -175,6 +189,12 @@ impl TinySkiaPen<'_> {
 
     fn set_color(&mut self, color: TinySkiaColor) {
         self.paint.set_color(color);
+    }
+
+    fn fill_rect(&mut self, width: f32, height: f32) {
+        let rect = Rect::from_xywh(self.x, self.y, width, height).unwrap();
+        self.pixmap
+            .fill_rect(rect, &self.paint, Transform::identity(), None);
     }
 
     fn draw_glyph(

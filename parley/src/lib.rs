@@ -17,11 +17,13 @@ pub use swash;
 
 mod bidi;
 pub mod font;
+mod inline_box;
 mod resolve;
 mod shape;
 mod swash_convert;
 mod util;
 
+pub mod builder;
 pub mod context;
 pub mod layout;
 pub mod style;
@@ -30,4 +32,5 @@ pub use peniko::Font;
 
 pub use context::LayoutContext;
 pub use font::FontContext;
+pub use inline_box::InlineBox;
 pub use layout::Layout;

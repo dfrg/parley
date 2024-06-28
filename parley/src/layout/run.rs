@@ -7,7 +7,7 @@ impl<'a, B: Brush> Run<'a, B> {
     pub(crate) fn new(
         layout: &'a LayoutData<B>,
         data: &'a RunData,
-        line_data: Option<&'a LineRunData>,
+        line_data: Option<&'a LineItemData>,
     ) -> Self {
         Self {
             layout,

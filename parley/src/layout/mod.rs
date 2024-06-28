@@ -3,6 +3,7 @@
 
 //! Layout types.
 
+mod alignment;
 mod cluster;
 mod line;
 mod run;
@@ -11,8 +12,10 @@ pub(crate) mod data;
 
 pub mod cursor;
 
+use self::alignment::align;
+
 use super::style::Brush;
-use crate::Font;
+use crate::{Font, InlineBox};
 use core::ops::Range;
 use data::*;
 use swash::text::cluster::{Boundary, ClusterInfo};
@@ -20,7 +23,7 @@ use swash::{GlyphId, NormalizedCoord, Synthesis};
 
 pub use cursor::Cursor;
 pub use line::greedy::BreakLines;
-pub use line::{GlyphRun, LineMetrics};
+pub use line::{GlyphRun, LayoutItem2, LineMetrics, PositionedInlineBox};
 pub use run::RunMetrics;
 
 /// Alignment of a layout.
@@ -95,6 +98,14 @@ impl<B: Brush> Layout<B> {
         })
     }
 
+    pub fn inline_boxes(&self) -> &[InlineBox] {
+        &self.data.inline_boxes
+    }
+
+    pub fn inline_boxes_mut(&mut self) -> &mut [InlineBox] {
+        &mut self.data.inline_boxes
+    }
+
     /// Returns an iterator over the lines in the layout.
     pub fn lines(&self) -> impl Iterator<Item = Line<B>> + '_ + Clone {
         self.data.lines.iter().map(move |data| Line {
@@ -108,10 +119,16 @@ impl<B: Brush> Layout<B> {
         BreakLines::new(&mut self.data)
     }
 
-    /// Breaks all lines with the specified maximum advance and alignment.
-    pub fn break_all_lines(&mut self, max_advance: Option<f32>, alignment: Alignment) {
+    /// Breaks all lines with the specified maximum advance
+    pub fn break_all_lines(&mut self, max_advance: Option<f32>) {
         self.break_lines()
-            .break_remaining(max_advance.unwrap_or(f32::MAX), alignment);
+            .break_remaining(max_advance.unwrap_or(f32::MAX));
+    }
+
+    // Apply to alignment to layout relative to the specified container width. If container_width is not
+    // specified then the max line length is used.
+    pub fn align(&mut self, container_width: Option<f32>, alignment: Alignment) {
+        align(&mut self.data, container_width, alignment)
     }
 
     /// Returns an iterator over the runs in the layout.
@@ -137,7 +154,7 @@ impl<B: Brush> Default for Layout<B> {
 pub struct Run<'a, B: Brush> {
     layout: &'a LayoutData<B>,
     data: &'a RunData,
-    line_data: Option<&'a LineRunData>,
+    line_data: Option<&'a LineItemData>,
 }
 
 /// Atomic unit of text.

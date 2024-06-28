@@ -186,7 +186,7 @@ impl CursorPath {
 
     /// Returns the run for this path and the specified layout.
     pub fn run<'a, B: Brush>(&self, layout: &'a Layout<B>) -> Option<Run<'a, B>> {
-        self.line(layout)?.get(self.run_index)
+        self.line(layout)?.get_run(self.run_index)
     }
 
     /// Returns the cluster for this path and the specified layout.
