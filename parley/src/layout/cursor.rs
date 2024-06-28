@@ -52,17 +52,12 @@ impl Cursor {
             let mut last_edge = line_metrics.offset;
             for (run_index, run) in line.runs().enumerate() {
                 result.path.run_index = run_index;
-                let cluster_range = run.data().cluster_range.clone();
                 for (cluster_index, cluster) in run.visual_clusters().enumerate() {
                     let range = cluster.text_range();
                     result.text_start = range.start;
                     result.text_end = range.end;
                     result.is_rtl = run.is_rtl();
-                    result.path.cluster_index = if result.is_rtl {
-                        cluster_range.end - cluster_index - 1
-                    } else {
-                        cluster_index
-                    };
+                    result.path.cluster_index = run.visual_to_logical(cluster_index).unwrap();
                     if x >= last_edge {
                         let advance = cluster.advance();
                         let next_edge = last_edge + advance;
@@ -122,18 +117,13 @@ impl Cursor {
                     result.offset = last_edge;
                     continue;
                 }
-                let cluster_range = run.data().cluster_range.clone();
                 for (cluster_index, cluster) in run.visual_clusters().enumerate() {
                     let range = cluster.text_range();
                     result.text_start = range.start;
                     result.text_end = range.end;
                     result.offset = last_edge;
                     result.is_rtl = run.is_rtl();
-                    result.path.cluster_index = if result.is_rtl {
-                        cluster_range.end - cluster_index - 1
-                    } else {
-                        cluster_index
-                    };
+                    result.path.cluster_index = run.visual_to_logical(cluster_index).unwrap();
                     let advance = cluster.advance();
                     if range.contains(&position) {
                         if !is_leading || !result.is_inside {

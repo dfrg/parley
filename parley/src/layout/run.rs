@@ -65,12 +65,17 @@ impl<'a, B: Brush> Run<'a, B> {
         self.data.bidi_level & 1 != 0
     }
 
-    /// Returns the number of clusters in the run.
-    pub fn len(&self) -> usize {
+    /// Returns the cluster range for the run.
+    pub fn cluster_range(&self) -> Range<usize> {
         self.line_data
             .map(|d| &d.cluster_range)
             .unwrap_or(&self.data.cluster_range)
-            .len()
+            .clone()
+    }
+
+    /// Returns the number of clusters in the run.
+    pub fn len(&self) -> usize {
+        self.cluster_range().len()
     }
 
     /// Returns true if the run is empty.
@@ -93,11 +98,7 @@ impl<'a, B: Brush> Run<'a, B> {
 
     /// Returns an iterator over the clusters in logical order.
     pub fn clusters(&'a self) -> impl Iterator<Item = Cluster<'a, B>> + 'a + Clone {
-        let range = self
-            .line_data
-            .map(|d| &d.cluster_range)
-            .unwrap_or(&self.data.cluster_range)
-            .clone();
+        let range = self.cluster_range();
         Clusters {
             run: self,
             range,
@@ -105,22 +106,30 @@ impl<'a, B: Brush> Run<'a, B> {
         }
     }
 
+    /// Returns the logical cluster index for the specified visual cluster index.
+    pub fn visual_to_logical(&self, visual_index: usize) -> Option<usize> {
+        let num_clusters = self.len();
+        if visual_index >= num_clusters {
+            return None;
+        }
+
+        let logical_index = if self.is_rtl() {
+            num_clusters - 1 - visual_index
+        } else {
+            visual_index
+        };
+
+        Some(logical_index)
+    }
+
     /// Returns an iterator over the clusters in visual order.
     pub fn visual_clusters(&'a self) -> impl Iterator<Item = Cluster<'a, B>> + 'a + Clone {
-        let range = self
-            .line_data
-            .map(|d| &d.cluster_range)
-            .unwrap_or(&self.data.cluster_range)
-            .clone();
+        let range = self.cluster_range();
         Clusters {
             run: self,
             range,
             rev: self.is_rtl(),
         }
-    }
-
-    pub(crate) fn data(&self) -> &'a RunData {
-        self.data
     }
 }
 
